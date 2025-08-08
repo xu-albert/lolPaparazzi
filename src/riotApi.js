@@ -40,13 +40,20 @@ class RiotAPI {
             summonerData.gameName = accountResponse.data.gameName;
             summonerData.tagLine = accountResponse.data.tagLine;
             
-            console.log('Raw summoner API response:', summonerResponse.data);
-            
-            // Check if we have an id field, if not, this might be an API issue
-            if (!summonerResponse.data.id) {
-                console.error('WARNING: Summoner API response missing ID field!');
-                console.log('Response keys:', Object.keys(summonerResponse.data));
-            }
+            // Debug logging to understand the API response structure
+            console.log('=== SUMMONER API DEBUG ===');
+            console.log('Response status:', summonerResponse.status);
+            console.log('Response headers content-type:', summonerResponse.headers['content-type']);
+            console.log('Raw response data:', JSON.stringify(summonerResponse.data, null, 2));
+            console.log('Available fields:', Object.keys(summonerResponse.data));
+            console.log('Field types:', Object.keys(summonerResponse.data).map(key => 
+                `${key}: ${typeof summonerResponse.data[key]}`
+            ));
+            console.log('Has id field:', 'id' in summonerResponse.data);
+            console.log('Has puuid field:', 'puuid' in summonerResponse.data);
+            console.log('ID value:', summonerResponse.data.id);
+            console.log('PUUID value:', summonerResponse.data.puuid);
+            console.log('=== END SUMMONER DEBUG ===');
             
             console.log(`Successfully found summoner: ${summonerData.gameName}#${summonerData.tagLine}`);
             return summonerData;
