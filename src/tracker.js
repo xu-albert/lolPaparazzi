@@ -168,12 +168,15 @@ class PlayerTracker {
 
     async restoreTrackingData() {
         try {
+            console.log('🔍 Attempting to restore tracking data...');
             const savedData = await this.persistence.loadTrackingData();
             if (savedData && savedData.channelId && savedData.summonerName) {
                 this.playerSession.channelId = savedData.channelId;
                 this.playerSession.summonerName = savedData.summonerName;
                 this.playerSession.originalInput = savedData.originalInput;
                 console.log(`🔄 Restored tracking: ${savedData.summonerName} in channel ${savedData.channelId}`);
+            } else {
+                console.log('ℹ️ No tracking data to restore');
             }
         } catch (error) {
             console.error('Error restoring tracking data:', error.message);

@@ -3,30 +3,18 @@ const path = require('path');
 
 class PersistenceManager {
     constructor() {
-        this.dataFile = path.join(process.cwd(), 'data', 'tracking.json');
-        this.ensureDataDirectory();
-    }
-
-    async ensureDataDirectory() {
-        try {
-            await fs.mkdir(path.dirname(this.dataFile), { recursive: true });
-        } catch (error) {
-            console.error('Error creating data directory:', error.message);
-        }
+        // Use Railway environment variables for persistence since filesystem is ephemeral
+        this.envPrefix = 'BOT_TRACKING_';
     }
 
     async saveTrackingData(playerSession) {
         try {
-            // Only save essential data, not runtime state
-            const dataToSave = {
-                channelId: playerSession.channelId,
-                summonerName: playerSession.summonerName,
-                originalInput: playerSession.originalInput,
-                lastSaved: new Date().toISOString()
-            };
-
-            await fs.writeFile(this.dataFile, JSON.stringify(dataToSave, null, 2));
-            console.log('Tracking data saved successfully');
+            // Note: Can't actually set env vars at runtime in Railway
+            // This is a limitation - Railway filesystem is ephemeral
+            // For now, just log that we would save it
+            console.log('📁 Would save tracking data (Railway filesystem is ephemeral)');
+            console.log(`   Channel: ${playerSession.channelId}`);
+            console.log(`   Summoner: ${playerSession.summonerName}`);
         } catch (error) {
             console.error('Error saving tracking data:', error.message);
         }
@@ -34,29 +22,30 @@ class PersistenceManager {
 
     async loadTrackingData() {
         try {
-            const data = await fs.readFile(this.dataFile, 'utf8');
-            const parsedData = JSON.parse(data);
-            console.log(`Restored tracking data from ${parsedData.lastSaved}`);
-            return parsedData;
-        } catch (error) {
-            if (error.code === 'ENOENT') {
-                console.log('No existing tracking data found');
-            } else {
-                console.error('Error loading tracking data:', error.message);
+            // Try to read from environment variables that might be manually set
+            const channelId = process.env.PERSISTENT_CHANNEL_ID;
+            const summonerName = process.env.PERSISTENT_SUMMONER_NAME;
+            const originalInput = process.env.PERSISTENT_ORIGINAL_INPUT;
+            
+            if (channelId && summonerName) {
+                console.log('📥 Found persistent tracking data in environment variables');
+                return {
+                    channelId,
+                    summonerName,
+                    originalInput: originalInput || summonerName,
+                    lastSaved: 'environment-variables'
+                };
             }
+            
+            return null;
+        } catch (error) {
+            console.error('Error loading tracking data:', error.message);
             return null;
         }
     }
 
     async clearTrackingData() {
-        try {
-            await fs.unlink(this.dataFile);
-            console.log('Tracking data cleared');
-        } catch (error) {
-            if (error.code !== 'ENOENT') {
-                console.error('Error clearing tracking data:', error.message);
-            }
-        }
+        console.log('🗑️ Tracking data cleared (would remove env vars if possible)');
     }
 }
 
