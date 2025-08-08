@@ -9,7 +9,7 @@ A Discord bot that tracks League of Legends ranked solo/duo queue gaming session
 - ⏰ **Smart timing** - 15-minute timeout between games to define session end
 - 📊 **Session stats** - Shows duration and games played per session
 - 🔄 **API-friendly** - Polls every 2 minutes to respect Riot API limits
-- ⚡ **Easy setup** - Configure once with environment variables
+- ⚡ **Easy setup** - Configure via Discord commands, no complex environment setup
 
 ## How It Works
 
@@ -35,15 +35,12 @@ Sessions can span multiple games and hours. You'll only get 2 notifications per 
 2. Sign in with your League account
 3. Copy your "Personal API Key" (regenerates every 24 hours for development)
 
-**Discord Channel ID:**
-1. Enable Developer Mode in Discord (Settings → Advanced → Developer Mode)
-2. Right-click the channel where you want notifications → "Copy Channel ID"
 
 ### 2. Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/lolPaparazzi.git
+git clone https://github.com/c3-albert/lolPaparazzi.git
 cd lolPaparazzi
 
 # Install dependencies
@@ -99,7 +96,7 @@ git add .
 git commit -m "Initial commit"
 
 # Create GitHub repo and push (replace with your username)
-git remote add origin https://github.com/yourusername/lolPaparazzi.git
+git remote add origin https://github.com/your-username/lolPaparazzi.git
 git branch -M main
 git push -u origin main
 ```
