@@ -15,11 +15,15 @@ class PlayerTracker {
         this.cronJob = null;
         // Session ends after 15 minutes of no ranked games
         this.sessionTimeoutMinutes = 15;
+        // Different polling intervals based on session state
+        this.normalPollingInterval = '*/2 * * * *'; // Every 2 minutes when not in session
+        this.inGamePollingInterval = '*/5 * * * *'; // Every 5 minutes during session
     }
 
-    setPlayer(channelId, summonerName) {
+    setPlayer(channelId, summonerName, originalInput = null) {
         this.playerSession.channelId = channelId;
         this.playerSession.summonerName = summonerName;
+        this.playerSession.originalInput = originalInput || summonerName;
         console.log(`Now tracking ${summonerName} in channel ${channelId}`);
     }
 
@@ -37,11 +41,11 @@ class PlayerTracker {
     }
 
     async checkPlayer() {
-        if (!this.playerSession.summonerName) return;
+        if (!this.playerSession.originalInput) return;
         
         try {
-            const summoner = await this.riotApi.getSummonerByName(this.playerSession.summonerName);
-            const currentGame = await this.riotApi.getCurrentGame(summoner.id);
+            const summoner = await this.riotApi.getSummonerByName(this.playerSession.originalInput);
+            const currentGame = await this.riotApi.getCurrentGame(summoner.puuid);
             const now = new Date();
             
             if (currentGame && this.riotApi.isRankedSoloGame(currentGame)) {
@@ -55,6 +59,8 @@ class PlayerTracker {
                     this.playerSession.gameCount = 1;
                     await this.sendSessionStartNotification(summoner, currentGame);
                     console.log(`Session started for ${summoner.name}`);
+                    // Switch to longer polling interval during session
+                    this.scheduleNextCheck();
                 } else {
                     // Already in session, just update game count
                     this.playerSession.gameCount++;
@@ -66,6 +72,8 @@ class PlayerTracker {
                     await this.sendSessionEndNotification(summoner);
                     this.resetSession();
                     console.log(`Session ended for ${summoner.name} due to inactivity`);
+                    // Switch back to faster polling when not in session
+                    this.scheduleNextCheck();
                 }
             }
         } catch (error) {
@@ -148,20 +156,26 @@ class PlayerTracker {
     }
 
     startTracking() {
+        this.scheduleNextCheck();
+    }
+
+    scheduleNextCheck() {
         if (this.cronJob) {
             this.cronJob.destroy();
         }
 
-        // Check every 2 minutes (Riot API personal key limit is 100 requests per 2 minutes)
-        // This gives us plenty of buffer for other API calls (summoner lookup, rank info, etc.)
-        this.cronJob = cron.schedule('*/2 * * * *', async () => {
-            if (!this.playerSession.summonerName) return;
+        // Use different intervals based on session state
+        const interval = this.playerSession.inSession ? this.inGamePollingInterval : this.normalPollingInterval;
+        const intervalText = this.playerSession.inSession ? '5 minutes (in session)' : '2 minutes (idle)';
 
-            console.log(`Checking ${this.playerSession.summonerName}...`);
+        this.cronJob = cron.schedule(interval, async () => {
+            if (!this.playerSession.originalInput) return;
+
+            console.log(`Checking ${this.playerSession.summonerName}... (${intervalText})`);
             await this.checkPlayer();
         });
 
-        console.log('Player tracking started (checking every 2 minutes)');
+        console.log(`Player tracking scheduled (${intervalText})`);
     }
 
     stopTracking() {

@@ -40,7 +40,7 @@ Sessions can span multiple games and hours. You'll only get 2 notifications per 
 
 ```bash
 # Clone the repository
-git clone https://github.com/c3-albert/lolPaparazzi.git
+git clone https://github.com/yourusername/lolPaparazzi.git
 cd lolPaparazzi
 
 # Install dependencies
@@ -82,9 +82,16 @@ npm start
 Once your bot is running and in your Discord server:
 
 1. Go to the Discord channel where you want notifications
-2. Use the setup command: `/setup YourSummonerName`
+2. Use the setup command with your full Riot ID: `/setup GameName#TAG`
+   - Example: `/setup Melvinbung#NA1`
+   - You must include the # and tag (NA1, EUW1, KR, etc.)
 3. The bot will confirm tracking is active and show your current rank
 4. That's it! You'll now get session notifications in that channel
+
+**Finding your Riot ID:**
+- Your Riot ID is in the format `GameName#TAG` 
+- You can find it on op.gg URLs: `op.gg/lol/summoners/na/GameName-TAG`
+- In-game: Settings → Account → Riot ID
 
 ## Deployment on Railway (Free)
 
@@ -119,7 +126,7 @@ Railway automatically:
 
 ## Commands
 
-- `/setup <summoner>` - Set up tracking for a player in the current channel
+- `/setup <GameName#TAG>` - Set up tracking for a player in the current channel (e.g., `/setup Melvinbung#NA1`)
 - `/stop` - Stop tracking in the current channel
 - `/info` - Show current tracking status and session info
 - `/status <summoner>` - Check if someone is currently playing (any summoner)

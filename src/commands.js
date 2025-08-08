@@ -8,22 +8,30 @@ function createCommands(riotApi, tracker) {
                 .setDescription('Set up tracking for a League of Legends player in this channel')
                 .addStringOption(option =>
                     option.setName('summoner')
-                        .setDescription('The summoner name to track')
+                        .setDescription('Your Riot ID in format: GameName#TAG (e.g., Melvinbung#NA1)')
                         .setRequired(true)),
             async execute(interaction) {
                 const summonerName = interaction.options.getString('summoner');
                 
                 try {
                     const summoner = await riotApi.getSummonerByName(summonerName);
+                    console.log('Summoner data:', summoner);
+                    
+                    if (!summoner) {
+                        throw new Error('Failed to get summoner data');
+                    }
+                    
+                    // Try to get rank info, but don't fail if summoner.id is missing
                     const rankInfo = await riotApi.getRankInfo(summoner.id);
                     const formattedRank = riotApi.formatRankInfo(rankInfo);
                     
-                    tracker.setPlayer(interaction.channelId, summoner.name);
+                    const displayName = summoner.gameName ? `${summoner.gameName}#${summoner.tagLine}` : summoner.name;
+                    tracker.setPlayer(interaction.channelId, displayName, summonerName);
                     
                     const embed = new EmbedBuilder()
                         .setColor(0x00ff00)
                         .setTitle('✅ Tracking Setup Complete!')
-                        .setDescription(`Now tracking **${summoner.name}** for ranked solo queue sessions in this channel!`)
+                        .setDescription(`Now tracking **${displayName}** for ranked solo queue sessions in this channel!`)
                         .addFields(
                             { name: 'Current Rank', value: formattedRank, inline: true },
                             { name: 'Level', value: summoner.summonerLevel.toString(), inline: true },
