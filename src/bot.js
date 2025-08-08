@@ -16,9 +16,6 @@ const client = new Client({
 const riotApi = new RiotAPI(config.riot.apiKey);
 const tracker = new PlayerTracker(riotApi, client);
 
-// Set up tracking with config values
-tracker.setPlayer(config.discord.channelId, config.tracking.summonerName);
-
 client.commands = new Collection();
 const commands = createCommands(riotApi, tracker);
 
@@ -28,8 +25,7 @@ commands.forEach(command => {
 
 client.once('ready', async () => {
     console.log(`✅ Logged in as ${client.user.tag}!`);
-    console.log(`🎯 Tracking: ${config.tracking.summonerName}`);
-    console.log(`📺 Channel: ${config.discord.channelId}`);
+    console.log('🎯 Use /setup <summoner> in a Discord channel to start tracking');
     
     try {
         console.log('🔄 Refreshing application (/) commands...');

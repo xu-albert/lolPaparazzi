@@ -61,8 +61,6 @@ Edit your `.env` file:
 ```env
 DISCORD_TOKEN=your_discord_bot_token_here
 RIOT_API_KEY=your_riot_games_api_key_here
-SUMMONER_NAME=YourSummonerName
-DISCORD_CHANNEL_ID=123456789012345678
 ```
 
 ### 4. Add Bot to Discord
@@ -81,6 +79,15 @@ npm run dev
 # Production
 npm start
 ```
+
+### 6. Set Up Tracking
+
+Once your bot is running and in your Discord server:
+
+1. Go to the Discord channel where you want notifications
+2. Use the setup command: `/setup YourSummonerName`
+3. The bot will confirm tracking is active and show your current rank
+4. That's it! You'll now get session notifications in that channel
 
 ## Deployment on Railway (Free)
 
@@ -103,8 +110,9 @@ git push -u origin main
 3. Select your `lolPaparazzi` repository
 4. Add environment variables:
    - Click "Variables" tab
-   - Add all 4 variables from your `.env` file
+   - Add only 2 variables: `DISCORD_TOKEN` and `RIOT_API_KEY`
 5. Click "Deploy" - your bot will be live in ~2 minutes!
+6. Use `/setup <summoner>` in Discord to start tracking
 
 Railway automatically:
 - Builds and deploys your Node.js app
@@ -114,12 +122,10 @@ Railway automatically:
 
 ## Commands
 
-The bot includes these slash commands for manual checking:
-
-- `/status <summoner>` - Check if someone is currently playing
-- `/track <summoner>` - Manually add tracking (not needed for main setup)
-- `/untrack <summoner>` - Remove tracking
-- `/list` - Show tracked players
+- `/setup <summoner>` - Set up tracking for a player in the current channel
+- `/stop` - Stop tracking in the current channel
+- `/info` - Show current tracking status and session info
+- `/status <summoner>` - Check if someone is currently playing (any summoner)
 
 ## Configuration
 

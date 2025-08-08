@@ -4,8 +4,8 @@ function createCommands(riotApi, tracker) {
     return [
         {
             data: new SlashCommandBuilder()
-                .setName('track')
-                .setDescription('Start tracking a League of Legends player')
+                .setName('setup')
+                .setDescription('Set up tracking for a League of Legends player in this channel')
                 .addStringOption(option =>
                     option.setName('summoner')
                         .setDescription('The summoner name to track')
@@ -18,22 +18,23 @@ function createCommands(riotApi, tracker) {
                     const rankInfo = await riotApi.getRankInfo(summoner.id);
                     const formattedRank = riotApi.formatRankInfo(rankInfo);
                     
-                    tracker.addPlayer(interaction.channelId, summoner.name, interaction.user.id);
+                    tracker.setPlayer(interaction.channelId, summoner.name);
                     
                     const embed = new EmbedBuilder()
                         .setColor(0x00ff00)
-                        .setTitle('✅ Player Added to Tracking')
-                        .setDescription(`Now tracking **${summoner.name}** for ranked solo queue games!`)
+                        .setTitle('✅ Tracking Setup Complete!')
+                        .setDescription(`Now tracking **${summoner.name}** for ranked solo queue sessions in this channel!`)
                         .addFields(
                             { name: 'Current Rank', value: formattedRank, inline: true },
-                            { name: 'Level', value: summoner.summonerLevel.toString(), inline: true }
+                            { name: 'Level', value: summoner.summonerLevel.toString(), inline: true },
+                            { name: 'Session Timeout', value: '15 minutes', inline: true }
                         )
                         .setTimestamp()
                         .setFooter({ text: 'LoL Paparazzi' });
 
                     await interaction.reply({ embeds: [embed] });
                 } catch (error) {
-                    console.error('Error in track command:', error);
+                    console.error('Error in setup command:', error);
                     
                     const embed = new EmbedBuilder()
                         .setColor(0xff0000)
@@ -48,28 +49,29 @@ function createCommands(riotApi, tracker) {
         },
         {
             data: new SlashCommandBuilder()
-                .setName('untrack')
-                .setDescription('Stop tracking a League of Legends player')
-                .addStringOption(option =>
-                    option.setName('summoner')
-                        .setDescription('The summoner name to stop tracking')
-                        .setRequired(true)),
+                .setName('stop')
+                .setDescription('Stop tracking in this channel'),
             async execute(interaction) {
-                const summonerName = interaction.options.getString('summoner');
-                const removed = tracker.removePlayer(interaction.channelId, summonerName);
+                const wasTracking = tracker.playerSession.channelId === interaction.channelId;
+                
+                if (wasTracking) {
+                    tracker.resetSession();
+                    tracker.playerSession.channelId = null;
+                    tracker.playerSession.summonerName = null;
+                }
                 
                 const embed = new EmbedBuilder()
                     .setTimestamp()
                     .setFooter({ text: 'LoL Paparazzi' });
 
-                if (removed) {
+                if (wasTracking) {
                     embed.setColor(0xff9900)
-                        .setTitle('🗑️ Player Removed')
-                        .setDescription(`Stopped tracking **${summonerName}**.`);
+                        .setTitle('🛑 Tracking Stopped')
+                        .setDescription('No longer tracking players in this channel.');
                 } else {
                     embed.setColor(0xff0000)
-                        .setTitle('❌ Player Not Found')
-                        .setDescription(`**${summonerName}** was not being tracked in this channel.`);
+                        .setTitle('❌ No Active Tracking')
+                        .setDescription('No players were being tracked in this channel.');
                 }
 
                 await interaction.reply({ embeds: [embed] });
@@ -77,26 +79,31 @@ function createCommands(riotApi, tracker) {
         },
         {
             data: new SlashCommandBuilder()
-                .setName('list')
-                .setDescription('List all tracked players in this channel'),
+                .setName('info')
+                .setDescription('Show current tracking information for this channel'),
             async execute(interaction) {
-                const trackedPlayers = tracker.getTrackedPlayers(interaction.channelId);
-                
                 const embed = new EmbedBuilder()
                     .setColor(0x0099ff)
-                    .setTitle('📋 Tracked Players')
+                    .setTitle('📋 Tracking Info')
                     .setTimestamp()
                     .setFooter({ text: 'LoL Paparazzi' });
 
-                if (trackedPlayers.length === 0) {
-                    embed.setDescription('No players are currently being tracked in this channel.\n\nUse `/track <summoner>` to start tracking someone!');
+                if (!tracker.playerSession.summonerName || tracker.playerSession.channelId !== interaction.channelId) {
+                    embed.setDescription('No player is currently being tracked in this channel.\n\nUse `/setup <summoner>` to start tracking!');
                 } else {
-                    const playerList = trackedPlayers
-                        .map((player, index) => `${index + 1}. **${player.summonerName}** ${player.currentlyInGame ? '🎮 (In Game)' : '⏸️ (Not Playing)'}`)
-                        .join('\n');
+                    const statusEmoji = tracker.playerSession.inSession ? '🎮' : '⏸️';
+                    const statusText = tracker.playerSession.inSession ? 'In Gaming Session' : 'Not Playing';
                     
-                    embed.setDescription(playerList);
-                    embed.addFields({ name: 'Total', value: `${trackedPlayers.length} player(s)`, inline: true });
+                    embed.setDescription(`Tracking **${tracker.playerSession.summonerName}**`)
+                        .addFields(
+                            { name: 'Status', value: `${statusEmoji} ${statusText}`, inline: true },
+                            { name: 'Session Games', value: tracker.playerSession.gameCount.toString(), inline: true }
+                        );
+                    
+                    if (tracker.playerSession.inSession && tracker.playerSession.sessionStartTime) {
+                        const duration = Math.floor((new Date() - tracker.playerSession.sessionStartTime) / 1000 / 60);
+                        embed.addFields({ name: 'Session Duration', value: `${duration} minutes`, inline: true });
+                    }
                 }
 
                 await interaction.reply({ embeds: [embed] });

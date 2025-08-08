@@ -2,14 +2,10 @@ require('dotenv').config();
 
 const config = {
     discord: {
-        token: process.env.DISCORD_TOKEN,
-        channelId: process.env.DISCORD_CHANNEL_ID
+        token: process.env.DISCORD_TOKEN
     },
     riot: {
         apiKey: process.env.RIOT_API_KEY
-    },
-    tracking: {
-        summonerName: process.env.SUMMONER_NAME
     }
 };
 
@@ -22,14 +18,6 @@ function validateConfig() {
     
     if (!config.riot.apiKey) {
         missing.push('RIOT_API_KEY');
-    }
-    
-    if (!config.tracking.summonerName) {
-        missing.push('SUMMONER_NAME');
-    }
-    
-    if (!config.discord.channelId) {
-        missing.push('DISCORD_CHANNEL_ID');
     }
     
     if (missing.length > 0) {
