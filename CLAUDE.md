@@ -1,6 +1,34 @@
-- we can add to todo for displaying more detailed information about melvinbung, like LP gain/loss, recent winrate, best champions, and other information.
-- todo:
-* ping a role when session starts.
-* give users the option to assign themselves the role
-* track multiple players
-* win/loss summary and LP gain/loss summary
+# LoL Paparazzi Development Notes
+
+## Current Status
+- ✅ Core bot functionality complete with PostgreSQL persistence
+- ✅ Session-based tracking (start/end notifications)
+- ✅ Riot ID support with Account API integration  
+- ✅ Smart polling: 3min idle, 5min during sessions
+- ✅ Deployed on Railway with auto-redeploys
+
+## Pending Todo Items
+
+### 1. Role Ping System
+- Add role ping functionality when gaming session starts
+- Create role self-assignment system for users to opt-in to notifications
+
+### 2. Enhanced Tracking
+- Implement multiple player tracking capability
+- Track different players in different channels
+
+### 3. Session Analytics
+- Add win/loss summary after each session ends
+- Track LP gain/loss for each session
+- Display session statistics (games played, duration, performance)
+
+### 4. Detailed Player Information  
+- Show LP, current rank, recent winrate
+- Display best/most played champions
+- Performance metrics and trends
+
+## Technical Notes
+- Database: PostgreSQL on Railway with persistent storage
+- APIs: Riot Account API, Summoner API, Spectator API v5
+- Only tracks ranked solo/duo games (queue ID 420)
+- Session timeout: 15 minutes of inactivity
