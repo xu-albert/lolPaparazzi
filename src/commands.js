@@ -66,6 +66,9 @@ function createCommands(riotApi, tracker) {
                     tracker.resetSession();
                     tracker.playerSession.channelId = null;
                     tracker.playerSession.summonerName = null;
+                    tracker.playerSession.originalInput = null;
+                    // Clear saved data
+                    tracker.persistence.clearTrackingData();
                 }
                 
                 const embed = new EmbedBuilder()

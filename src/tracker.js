@@ -1,9 +1,11 @@
 const cron = require('node-cron');
+const PersistenceManager = require('./persistence');
 
 class PlayerTracker {
     constructor(riotApi, discordClient) {
         this.riotApi = riotApi;
         this.discordClient = discordClient;
+        this.persistence = new PersistenceManager();
         this.playerSession = {
             summonerName: null,
             channelId: null,
@@ -25,6 +27,9 @@ class PlayerTracker {
         this.playerSession.summonerName = summonerName;
         this.playerSession.originalInput = originalInput || summonerName;
         console.log(`Now tracking ${summonerName} in channel ${channelId}`);
+        
+        // Save tracking data
+        this.persistence.saveTrackingData(this.playerSession);
     }
 
     isSessionActive() {
@@ -155,8 +160,24 @@ class PlayerTracker {
         }
     }
 
-    startTracking() {
+    async startTracking() {
+        // Try to restore tracking data from previous session
+        await this.restoreTrackingData();
         this.scheduleNextCheck();
+    }
+
+    async restoreTrackingData() {
+        try {
+            const savedData = await this.persistence.loadTrackingData();
+            if (savedData && savedData.channelId && savedData.summonerName) {
+                this.playerSession.channelId = savedData.channelId;
+                this.playerSession.summonerName = savedData.summonerName;
+                this.playerSession.originalInput = savedData.originalInput;
+                console.log(`🔄 Restored tracking: ${savedData.summonerName} in channel ${savedData.channelId}`);
+            }
+        } catch (error) {
+            console.error('Error restoring tracking data:', error.message);
+        }
     }
 
     scheduleNextCheck() {

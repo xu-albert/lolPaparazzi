@@ -35,7 +35,7 @@ client.once('ready', async () => {
         console.error('❌ Error registering commands:', error);
     }
     
-    tracker.startTracking();
+    await tracker.startTracking();
 });
 
 client.on('interactionCreate', async interaction => {
