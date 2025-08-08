@@ -63,7 +63,7 @@ class PlayerTracker {
                     this.playerSession.sessionStartTime = now;
                     this.playerSession.gameCount = 1;
                     await this.sendSessionStartNotification(summoner, currentGame);
-                    console.log(`Session started for ${summoner.name}`);
+                    console.log(`Session started for ${summoner.gameName}#${summoner.tagLine}`);
                     // Switch to longer polling interval during session
                     this.scheduleNextCheck();
                 } else {
@@ -76,7 +76,7 @@ class PlayerTracker {
                     // End session due to timeout
                     await this.sendSessionEndNotification(summoner);
                     this.resetSession();
-                    console.log(`Session ended for ${summoner.name} due to inactivity`);
+                    console.log(`Session ended for ${summoner.gameName}#${summoner.tagLine} due to inactivity`);
                     // Switch back to faster polling when not in session
                     this.scheduleNextCheck();
                 }
@@ -102,7 +102,7 @@ class PlayerTracker {
             const embed = {
                 color: 0x00ff00,
                 title: '🎮 Gaming Session Started!',
-                description: `**${summoner.name}** started a ranked solo queue session!`,
+                description: `**${summoner.gameName}#${summoner.tagLine}** started a ranked solo queue session!`,
                 fields: [
                     {
                         name: 'Current Rank',
@@ -146,7 +146,7 @@ class PlayerTracker {
             const embed = {
                 color: 0xff9900,
                 title: '⏹️ Gaming Session Ended',
-                description: `**${summoner.name}**'s gaming session has ended!`,
+                description: `**${summoner.gameName}#${summoner.tagLine}**'s gaming session has ended!`,
                 fields: [
                     {
                         name: 'Session Duration',

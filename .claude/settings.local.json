@@ -9,7 +9,8 @@
       "WebFetch(domain:op.gg)",
       "Bash(git reset:*)",
       "Bash(node:*)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "WebFetch(domain:developer.riotgames.com)"
     ],
     "deny": []
   }

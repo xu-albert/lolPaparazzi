@@ -21,7 +21,7 @@ function createCommands(riotApi, tracker) {
                         throw new Error('Failed to get summoner data');
                     }
                     
-                    const displayName = summoner.gameName ? `${summoner.gameName}#${summoner.tagLine}` : summoner.name;
+                    const displayName = `${summoner.gameName}#${summoner.tagLine}`;
                     tracker.setPlayer(interaction.channelId, displayName, summonerName);
                     
                     const embed = new EmbedBuilder()
@@ -130,7 +130,7 @@ function createCommands(riotApi, tracker) {
                     
                     const embed = new EmbedBuilder()
                         .setColor(0x0099ff)
-                        .setTitle(`📊 ${summoner.name}'s Status`)
+                        .setTitle(`📊 ${summoner.gameName}#${summoner.tagLine}'s Status`)
                         .addFields(
                             { name: 'Rank', value: formattedRank, inline: true },
                             { name: 'Level', value: summoner.summonerLevel.toString(), inline: true }

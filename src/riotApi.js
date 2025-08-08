@@ -40,20 +40,6 @@ class RiotAPI {
             summonerData.gameName = accountResponse.data.gameName;
             summonerData.tagLine = accountResponse.data.tagLine;
             
-            // Debug logging to understand the API response structure
-            console.log('=== SUMMONER API DEBUG ===');
-            console.log('Response status:', summonerResponse.status);
-            console.log('Response headers content-type:', summonerResponse.headers['content-type']);
-            console.log('Raw response data:', JSON.stringify(summonerResponse.data, null, 2));
-            console.log('Available fields:', Object.keys(summonerResponse.data));
-            console.log('Field types:', Object.keys(summonerResponse.data).map(key => 
-                `${key}: ${typeof summonerResponse.data[key]}`
-            ));
-            console.log('Has id field:', 'id' in summonerResponse.data);
-            console.log('Has puuid field:', 'puuid' in summonerResponse.data);
-            console.log('ID value:', summonerResponse.data.id);
-            console.log('PUUID value:', summonerResponse.data.puuid);
-            console.log('=== END SUMMONER DEBUG ===');
             
             console.log(`Successfully found summoner: ${summonerData.gameName}#${summonerData.tagLine}`);
             return summonerData;
@@ -69,7 +55,7 @@ class RiotAPI {
         }
     }
 
-    // Try new Account API first, fallback to legacy if needed
+    // Modern Riot ID lookup using Account API
     async getSummonerByName(input) {
         // Require Riot ID format (gameName#tagLine)
         if (!input.includes('#')) {
@@ -81,44 +67,10 @@ class RiotAPI {
             throw new Error('Invalid Riot ID format. Use: GameName#TAG (e.g., Melvinbung#NA1)');
         }
         
-        try {
-            // Try new Account API first
-            return await this.getSummonerByRiotId(gameName.trim(), tagLine.trim());
-        } catch (error) {
-            // If Account API fails (403/401), try legacy method for NA1 only
-            if ((error.response?.status === 403 || error.response?.status === 401) && tagLine.trim().toUpperCase() === 'NA1') {
-                console.log('Account API not available, trying legacy method for NA1...');
-                return await this.getSummonerByLegacyName(gameName.trim());
-            }
-            throw error;
-        }
+        // All players now have Riot IDs - use Account API only
+        return await this.getSummonerByRiotId(gameName.trim(), tagLine.trim());
     }
 
-    // Legacy fallback for NA1 region only
-    async getSummonerByLegacyName(summonerName) {
-        try {
-            console.log(`Trying legacy lookup for: ${summonerName}`);
-            const response = await axios.get(
-                `${this.baseURL}/summoner/v4/summoners/by-name/${encodeURIComponent(summonerName)}`,
-                {
-                    headers: {
-                        'X-Riot-Token': this.apiKey
-                    }
-                }
-            );
-            
-            const summonerData = response.data;
-            // Add fake riot ID data for display
-            summonerData.gameName = summonerName;
-            summonerData.tagLine = 'NA1';
-            
-            console.log(`Legacy lookup successful: ${summonerData.name}`);
-            return summonerData;
-        } catch (error) {
-            console.error('Legacy API also failed:', error.response?.data || error.message);
-            throw new Error(`Could not find summoner "${summonerName}#NA1". Please check the spelling and try again.`);
-        }
-    }
 
     async getCurrentGame(puuid) {
         try {
