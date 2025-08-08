@@ -12,7 +12,8 @@ class PlayerTracker {
             inSession: false,
             lastGameCheck: null,
             sessionStartTime: null,
-            gameCount: 0
+            gameCount: 0,
+            currentGameId: null
         };
         this.cronJob = null;
         // Session ends after 15 minutes of no ranked games
@@ -57,19 +58,27 @@ class PlayerTracker {
                 // Player is in a ranked game
                 this.playerSession.lastGameCheck = now;
                 
+                // Check if this is a new game (different game ID)
+                const gameId = currentGame.gameId;
+                const isNewGame = gameId !== this.playerSession.currentGameId;
+                
                 if (!this.playerSession.inSession) {
                     // Start new session
                     this.playerSession.inSession = true;
                     this.playerSession.sessionStartTime = now;
                     this.playerSession.gameCount = 1;
+                    this.playerSession.currentGameId = gameId;
                     await this.sendSessionStartNotification(summoner, currentGame);
                     console.log(`Session started for ${summoner.gameName}#${summoner.tagLine}`);
                     // Switch to longer polling interval during session
                     this.scheduleNextCheck();
-                } else {
-                    // Already in session, just update game count
+                } else if (isNewGame) {
+                    // Already in session, but this is a new game
                     this.playerSession.gameCount++;
+                    this.playerSession.currentGameId = gameId;
+                    console.log(`New game detected for ${summoner.gameName}#${summoner.tagLine} (Game ${this.playerSession.gameCount})`);
                 }
+                // If same game, don't increment counter
             } else {
                 // Player not in ranked game
                 if (this.playerSession.inSession && this.shouldEndSession()) {
@@ -91,6 +100,7 @@ class PlayerTracker {
         this.playerSession.sessionStartTime = null;
         this.playerSession.gameCount = 0;
         this.playerSession.lastGameCheck = null;
+        this.playerSession.currentGameId = null;
     }
 
     async sendSessionStartNotification(summoner, gameData) {
