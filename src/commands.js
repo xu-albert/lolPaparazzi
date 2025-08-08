@@ -21,10 +21,6 @@ function createCommands(riotApi, tracker) {
                         throw new Error('Failed to get summoner data');
                     }
                     
-                    // Try to get rank info, but don't fail if summoner.id is missing
-                    const rankInfo = await riotApi.getRankInfo(summoner.id);
-                    const formattedRank = riotApi.formatRankInfo(rankInfo);
-                    
                     const displayName = summoner.gameName ? `${summoner.gameName}#${summoner.tagLine}` : summoner.name;
                     tracker.setPlayer(interaction.channelId, displayName, summonerName);
                     
@@ -32,11 +28,6 @@ function createCommands(riotApi, tracker) {
                         .setColor(0x00ff00)
                         .setTitle('✅ Tracking Setup Complete!')
                         .setDescription(`Now tracking **${displayName}** for ranked solo queue sessions in this channel!`)
-                        .addFields(
-                            { name: 'Current Rank', value: formattedRank, inline: true },
-                            { name: 'Level', value: summoner.summonerLevel.toString(), inline: true },
-                            { name: 'Session Timeout', value: '15 minutes', inline: true }
-                        )
                         .setTimestamp()
                         .setFooter({ text: 'LoL Paparazzi' });
 

@@ -6,7 +6,8 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git push:*)",
-      "WebFetch(domain:op.gg)"
+      "WebFetch(domain:op.gg)",
+      "Bash(git reset:*)"
     ],
     "deny": []
   }
