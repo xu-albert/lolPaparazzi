@@ -8,7 +8,7 @@ A Discord bot that tracks League of Legends ranked solo/duo queue gaming session
 - 🏆 **Ranked Solo/Duo only** - Ignores other game modes (ARAM, normals, etc.)
 - ⏰ **Smart timing** - 15-minute timeout between games to define session end
 - 📊 **Session stats** - Shows duration and games played per session
-- 🔄 **API-friendly** - Polls every 2 minutes to respect Riot API limits
+- 🔄 **API-friendly** - Polls every 3 minutes when idle, 5 minutes during sessions
 - ⚡ **Easy setup** - Configure via Discord commands, no complex environment setup
 - 💾 **Persistent tracking** - Uses PostgreSQL database to remember tracking settings across deployments
 

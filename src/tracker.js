@@ -18,7 +18,7 @@ class PlayerTracker {
         // Session ends after 15 minutes of no ranked games
         this.sessionTimeoutMinutes = 15;
         // Different polling intervals based on session state
-        this.normalPollingInterval = '*/2 * * * *'; // Every 2 minutes when not in session
+        this.normalPollingInterval = '*/3 * * * *'; // Every 3 minutes when not in session
         this.inGamePollingInterval = '*/5 * * * *'; // Every 5 minutes during session
     }
 
@@ -190,7 +190,7 @@ class PlayerTracker {
 
         // Use different intervals based on session state
         const interval = this.playerSession.inSession ? this.inGamePollingInterval : this.normalPollingInterval;
-        const intervalText = this.playerSession.inSession ? '5 minutes (in session)' : '2 minutes (idle)';
+        const intervalText = this.playerSession.inSession ? '5 minutes (in session)' : '3 minutes (idle)';
 
         this.cronJob = cron.schedule(interval, async () => {
             if (!this.playerSession.originalInput) return;
