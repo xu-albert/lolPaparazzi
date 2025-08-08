@@ -1,0 +1,24 @@
+{
+  "name": "lol-paparazzi",
+  "version": "1.0.0",
+  "description": "Discord bot that tracks League of Legends ranked solo queue games",
+  "main": "src/bot.js",
+  "scripts": {
+    "start": "node src/bot.js",
+    "dev": "node --watch src/bot.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "discord.js": "^14.15.3",
+    "dotenv": "^17.2.1",
+    "node-cron": "^3.0.3"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "league-of-legends",
+    "riot-games"
+  ],
+  "author": "",
+  "license": "MIT"
+}
