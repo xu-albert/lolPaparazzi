@@ -124,8 +124,8 @@ function createCommands(riotApi, tracker) {
                 
                 try {
                     const summoner = await riotApi.getSummonerByName(summonerName);
-                    const currentGame = await riotApi.getCurrentGame(summoner.id);
-                    const rankInfo = await riotApi.getRankInfo(summoner.id);
+                    const currentGame = await riotApi.getCurrentGame(summoner.puuid);
+                    const rankInfo = await riotApi.getRankInfo(summoner.puuid);
                     const formattedRank = riotApi.formatRankInfo(rankInfo);
                     
                     const embed = new EmbedBuilder()
@@ -158,6 +158,136 @@ function createCommands(riotApi, tracker) {
                         .setColor(0xff0000)
                         .setTitle('❌ Error')
                         .setDescription(`Could not find summoner "${summonerName}". Please check the spelling and try again.`)
+                        .setTimestamp()
+                        .setFooter({ text: 'LoL Paparazzi' });
+
+                    await interaction.reply({ embeds: [embed] });
+                }
+            }
+        },
+        {
+            data: new SlashCommandBuilder()
+                .setName('join')
+                .setDescription('Get the Paparazzi role to be notified when gaming sessions start'),
+            async execute(interaction) {
+                try {
+                    const guild = interaction.guild;
+                    const member = interaction.member;
+                    
+                    if (!guild || !member) {
+                        throw new Error('This command can only be used in a server.');
+                    }
+                    
+                    // Find or create the Paparazzi role
+                    let paparazziRole = guild.roles.cache.find(role => role.name === 'Paparazzi');
+                    
+                    if (!paparazziRole) {
+                        paparazziRole = await guild.roles.create({
+                            name: 'Paparazzi',
+                            color: 0x00ff00,
+                            reason: 'LoL Paparazzi notification role',
+                            mentionable: true
+                        });
+                        console.log('Created Paparazzi role');
+                    }
+                    
+                    // Check if user already has the role
+                    if (member.roles.cache.has(paparazziRole.id)) {
+                        const embed = new EmbedBuilder()
+                            .setColor(0xff9900)
+                            .setTitle('📸 Already a Paparazzi!')
+                            .setDescription('You already have the Paparazzi role and will be notified when gaming sessions start.')
+                            .setTimestamp()
+                            .setFooter({ text: 'LoL Paparazzi' });
+
+                        await interaction.reply({ embeds: [embed] });
+                        return;
+                    }
+                    
+                    // Add the role to the user
+                    await member.roles.add(paparazziRole);
+                    
+                    const embed = new EmbedBuilder()
+                        .setColor(0x00ff00)
+                        .setTitle('📸 Welcome to the Paparazzi!')
+                        .setDescription('You now have the Paparazzi role and will be notified when gaming sessions start.\n\nUse `/leave` if you want to stop receiving notifications.')
+                        .setTimestamp()
+                        .setFooter({ text: 'LoL Paparazzi' });
+
+                    await interaction.reply({ embeds: [embed] });
+                } catch (error) {
+                    console.error('Error in join command:', error);
+                    
+                    const embed = new EmbedBuilder()
+                        .setColor(0xff0000)
+                        .setTitle('❌ Error')
+                        .setDescription('Could not add the Paparazzi role. Make sure the bot has permission to manage roles.')
+                        .setTimestamp()
+                        .setFooter({ text: 'LoL Paparazzi' });
+
+                    await interaction.reply({ embeds: [embed] });
+                }
+            }
+        },
+        {
+            data: new SlashCommandBuilder()
+                .setName('leave')
+                .setDescription('Remove the Paparazzi role to stop receiving session notifications'),
+            async execute(interaction) {
+                try {
+                    const guild = interaction.guild;
+                    const member = interaction.member;
+                    
+                    if (!guild || !member) {
+                        throw new Error('This command can only be used in a server.');
+                    }
+                    
+                    // Find the Paparazzi role
+                    const paparazziRole = guild.roles.cache.find(role => role.name === 'Paparazzi');
+                    
+                    if (!paparazziRole) {
+                        const embed = new EmbedBuilder()
+                            .setColor(0xff9900)
+                            .setTitle('📸 No Paparazzi Role Found')
+                            .setDescription('There is no Paparazzi role in this server. Use `/join` to create one and join!')
+                            .setTimestamp()
+                            .setFooter({ text: 'LoL Paparazzi' });
+
+                        await interaction.reply({ embeds: [embed] });
+                        return;
+                    }
+                    
+                    // Check if user has the role
+                    if (!member.roles.cache.has(paparazziRole.id)) {
+                        const embed = new EmbedBuilder()
+                            .setColor(0xff9900)
+                            .setTitle('📸 Not a Paparazzi')
+                            .setDescription('You don\'t have the Paparazzi role. Use `/join` to get notifications!')
+                            .setTimestamp()
+                            .setFooter({ text: 'LoL Paparazzi' });
+
+                        await interaction.reply({ embeds: [embed] });
+                        return;
+                    }
+                    
+                    // Remove the role from the user
+                    await member.roles.remove(paparazziRole);
+                    
+                    const embed = new EmbedBuilder()
+                        .setColor(0xff9900)
+                        .setTitle('📸 Left the Paparazzi')
+                        .setDescription('You have removed the Paparazzi role and will no longer receive gaming session notifications.\n\nUse `/join` if you want to start receiving notifications again.')
+                        .setTimestamp()
+                        .setFooter({ text: 'LoL Paparazzi' });
+
+                    await interaction.reply({ embeds: [embed] });
+                } catch (error) {
+                    console.error('Error in leave command:', error);
+                    
+                    const embed = new EmbedBuilder()
+                        .setColor(0xff0000)
+                        .setTitle('❌ Error')
+                        .setDescription('Could not remove the Paparazzi role. Make sure the bot has permission to manage roles.')
                         .setTimestamp()
                         .setFooter({ text: 'LoL Paparazzi' });
 

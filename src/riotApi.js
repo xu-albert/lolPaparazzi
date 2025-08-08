@@ -136,22 +136,38 @@ class RiotAPI {
 
     async getRankInfo(summonerIdOrPuuid) {
         try {
-            // The rank API still needs the encrypted summoner ID, not PUUID
-            // If we don't have it, we'll have to skip rank info for now
             if (!summonerIdOrPuuid) {
-                console.log('No summoner ID available for rank lookup');
+                console.log('No summoner ID/PUUID available for rank lookup');
                 return [];
             }
             
-            const response = await axios.get(
-                `${this.baseURL}/league/v4/entries/by-summoner/${summonerIdOrPuuid}`,
-                {
-                    headers: {
-                        'X-Riot-Token': this.apiKey
+            // Try using PUUID endpoint first (more reliable)
+            try {
+                const response = await axios.get(
+                    `${this.baseURL}/league/v4/entries/by-puuid/${summonerIdOrPuuid}`,
+                    {
+                        headers: {
+                            'X-Riot-Token': this.apiKey
+                        }
                     }
-                }
-            );
-            return response.data;
+                );
+                console.log('Rank info retrieved using PUUID endpoint');
+                return response.data;
+            } catch (puuidError) {
+                console.log('PUUID endpoint failed, trying summoner ID endpoint...');
+                
+                // Fallback to summoner ID endpoint
+                const response = await axios.get(
+                    `${this.baseURL}/league/v4/entries/by-summoner/${summonerIdOrPuuid}`,
+                    {
+                        headers: {
+                            'X-Riot-Token': this.apiKey
+                        }
+                    }
+                );
+                console.log('Rank info retrieved using summoner ID endpoint');
+                return response.data;
+            }
         } catch (error) {
             console.error('Error fetching rank info:', error.response?.data || error.message);
             // Return empty array instead of throwing, so setup can continue

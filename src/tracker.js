@@ -96,7 +96,7 @@ class PlayerTracker {
     async sendSessionStartNotification(summoner, gameData) {
         try {
             const channel = await this.discordClient.channels.fetch(this.playerSession.channelId);
-            const rankInfo = await this.riotApi.getRankInfo(summoner.id);
+            const rankInfo = await this.riotApi.getRankInfo(summoner.puuid);
             const formattedRank = this.riotApi.formatRankInfo(rankInfo);
             
             const embed = {
@@ -121,7 +121,18 @@ class PlayerTracker {
                 }
             };
 
-            await channel.send({ embeds: [embed] });
+            // Find the Paparazzi role and ping it (only once per session)
+            let content = '';
+            const guild = channel.guild;
+            if (guild) {
+                const paparazziRole = guild.roles.cache.find(role => role.name === 'Paparazzi');
+                if (paparazziRole) {
+                    content = `<@&${paparazziRole.id}>`;
+                    console.log('Pinging Paparazzi role for session start');
+                }
+            }
+
+            await channel.send({ content, embeds: [embed] });
         } catch (error) {
             console.error('Error sending session start notification:', error);
         }

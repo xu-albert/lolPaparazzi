@@ -7,7 +7,9 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "WebFetch(domain:op.gg)",
-      "Bash(git reset:*)"
+      "Bash(git reset:*)",
+      "Bash(node:*)",
+      "Bash(rm:*)"
     ],
     "deny": []
   }
