@@ -9,20 +9,25 @@
 
 ## Pending Todo Items
 
-### 1. Role Ping System
+### 1. Fix Missing Summoner ID Issue  
+- Investigate why Riot Summoner API response is missing `id` field
+- This prevents rank display in setup messages and commands
+- All other functionality works (uses PUUID), but rank info needs the encrypted summoner ID
+
+### 2. Role Ping System
 - Add role ping functionality when gaming session starts
 - Create role self-assignment system for users to opt-in to notifications
 
-### 2. Enhanced Tracking
+### 3. Enhanced Tracking
 - Implement multiple player tracking capability
 - Track different players in different channels
 
-### 3. Session Analytics
+### 4. Session Analytics
 - Add win/loss summary after each session ends
 - Track LP gain/loss for each session
 - Display session statistics (games played, duration, performance)
 
-### 4. Detailed Player Information  
+### 5. Detailed Player Information  
 - Show LP, current rank, recent winrate
 - Display best/most played champions
 - Performance metrics and trends
