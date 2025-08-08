@@ -70,6 +70,8 @@ class PlayerTracker {
                     this.playerSession.currentGameId = gameId;
                     await this.sendSessionStartNotification(summoner, currentGame);
                     console.log(`Session started for ${summoner.gameName}#${summoner.tagLine}`);
+                    // Save session state to database
+                    await this.persistence.saveTrackingData(this.playerSession);
                     // Switch to longer polling interval during session
                     this.scheduleNextCheck();
                 } else if (isNewGame) {
@@ -77,6 +79,8 @@ class PlayerTracker {
                     this.playerSession.gameCount++;
                     this.playerSession.currentGameId = gameId;
                     console.log(`New game detected for ${summoner.gameName}#${summoner.tagLine} (Game ${this.playerSession.gameCount})`);
+                    // Save updated game count to database
+                    await this.persistence.saveTrackingData(this.playerSession);
                 }
                 // If same game, don't increment counter
             } else {
@@ -86,6 +90,8 @@ class PlayerTracker {
                     await this.sendSessionEndNotification(summoner);
                     this.resetSession();
                     console.log(`Session ended for ${summoner.gameName}#${summoner.tagLine} due to inactivity`);
+                    // Save cleared session state to database
+                    await this.persistence.saveTrackingData(this.playerSession);
                     // Switch back to faster polling when not in session
                     this.scheduleNextCheck();
                 }
@@ -192,10 +198,24 @@ class PlayerTracker {
             console.log('🔍 Attempting to restore tracking data...');
             const savedData = await this.persistence.loadTrackingData();
             if (savedData && savedData.channelId && savedData.summonerName) {
+                // Restore basic tracking info
                 this.playerSession.channelId = savedData.channelId;
                 this.playerSession.summonerName = savedData.summonerName;
                 this.playerSession.originalInput = savedData.originalInput;
+                
+                // Restore session state
+                this.playerSession.inSession = savedData.inSession || false;
+                this.playerSession.sessionStartTime = savedData.sessionStartTime;
+                this.playerSession.gameCount = savedData.gameCount || 0;
+                this.playerSession.currentGameId = savedData.currentGameId;
+                this.playerSession.lastGameCheck = savedData.lastGameCheck;
+                
                 console.log(`🔄 Restored tracking: ${savedData.summonerName} in channel ${savedData.channelId}`);
+                
+                if (this.playerSession.inSession) {
+                    const sessionDuration = Math.floor((new Date() - this.playerSession.sessionStartTime) / 1000 / 60);
+                    console.log(`🎮 Resumed active session: ${this.playerSession.gameCount} games, ${sessionDuration} minutes`);
+                }
             } else {
                 console.log('ℹ️ No tracking data to restore');
             }

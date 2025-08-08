@@ -32,6 +32,11 @@ class PersistenceManager {
                     channel_id VARCHAR(255) NOT NULL,
                     summoner_name VARCHAR(255) NOT NULL,
                     original_input VARCHAR(255) NOT NULL,
+                    in_session BOOLEAN DEFAULT FALSE,
+                    session_start_time TIMESTAMP WITH TIME ZONE,
+                    game_count INTEGER DEFAULT 0,
+                    current_game_id VARCHAR(255),
+                    last_game_check TIMESTAMP WITH TIME ZONE,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                 )
@@ -59,17 +64,26 @@ class PersistenceManager {
             await this.pool.query('DELETE FROM player_tracking');
             
             const query = `
-                INSERT INTO player_tracking (channel_id, summoner_name, original_input, updated_at)
-                VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+                INSERT INTO player_tracking (
+                    channel_id, summoner_name, original_input, in_session,
+                    session_start_time, game_count, current_game_id, 
+                    last_game_check, updated_at
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
             `;
             
             await this.pool.query(query, [
                 playerSession.channelId,
                 playerSession.summonerName,
-                playerSession.originalInput
+                playerSession.originalInput,
+                playerSession.inSession,
+                playerSession.sessionStartTime,
+                playerSession.gameCount,
+                playerSession.currentGameId,
+                playerSession.lastGameCheck
             ]);
             
-            console.log('💾 Tracking data saved to database');
+            console.log('💾 Full session state saved to database');
         } catch (error) {
             console.error('❌ Error saving tracking data:', error.message);
         }
@@ -88,11 +102,18 @@ class PersistenceManager {
             
             if (result.rows.length > 0) {
                 const row = result.rows[0];
-                console.log(`📥 Restored tracking data from database (updated: ${row.updated_at})`);
+                console.log(`📥 Restored full session state from database (updated: ${row.updated_at})`);
+                console.log(`🎮 Session active: ${row.in_session}, Games: ${row.game_count}`);
+                
                 return {
                     channelId: row.channel_id,
                     summonerName: row.summoner_name,
                     originalInput: row.original_input,
+                    inSession: row.in_session,
+                    sessionStartTime: row.session_start_time ? new Date(row.session_start_time) : null,
+                    gameCount: row.game_count || 0,
+                    currentGameId: row.current_game_id,
+                    lastGameCheck: row.last_game_check ? new Date(row.last_game_check) : null,
                     lastSaved: row.updated_at
                 };
             }
