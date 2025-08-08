@@ -37,6 +37,7 @@ class PersistenceManager {
                     game_count INTEGER DEFAULT 0,
                     current_game_id VARCHAR(255),
                     last_game_check TIMESTAMP WITH TIME ZONE,
+                    last_completed_game_id VARCHAR(255),
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                 )
@@ -67,9 +68,9 @@ class PersistenceManager {
                 INSERT INTO player_tracking (
                     channel_id, summoner_name, original_input, in_session,
                     session_start_time, game_count, current_game_id, 
-                    last_game_check, updated_at
+                    last_game_check, last_completed_game_id, updated_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
             `;
             
             await this.pool.query(query, [
@@ -80,7 +81,8 @@ class PersistenceManager {
                 playerSession.sessionStartTime,
                 playerSession.gameCount,
                 playerSession.currentGameId,
-                playerSession.lastGameCheck
+                playerSession.lastGameCheck,
+                playerSession.lastCompletedGameId
             ]);
             
             console.log('💾 Full session state saved to database');
@@ -114,6 +116,7 @@ class PersistenceManager {
                     gameCount: row.game_count || 0,
                     currentGameId: row.current_game_id,
                     lastGameCheck: row.last_game_check ? new Date(row.last_game_check) : null,
+                    lastCompletedGameId: row.last_completed_game_id,
                     lastSaved: row.updated_at
                 };
             }

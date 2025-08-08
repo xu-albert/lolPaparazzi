@@ -13,7 +13,9 @@ class PlayerTracker {
             lastGameCheck: null,
             sessionStartTime: null,
             gameCount: 0,
-            currentGameId: null
+            currentGameId: null,
+            lastCompletedGameId: null,
+            pendingMatchAnalysis: []
         };
         this.cronJob = null;
         // Session ends after 15 minutes of no ranked games
@@ -84,7 +86,21 @@ class PlayerTracker {
                 }
                 // If same game, don't increment counter
             } else {
-                // Player not in ranked game
+                // Player not in ranked game - check if a game just ended
+                if (this.playerSession.inSession && this.playerSession.currentGameId) {
+                    // Player was in a game but now isn't - game ended!
+                    console.log(`Game ended: ${this.playerSession.currentGameId} for ${summoner.gameName}#${summoner.tagLine}`);
+                    
+                    // Queue this game for match analysis
+                    this.playerSession.lastCompletedGameId = this.playerSession.currentGameId;
+                    this.playerSession.currentGameId = null;
+                    
+                    // Analyze match after a short delay (match data may take time to appear)
+                    setTimeout(() => {
+                        this.analyzeCompletedMatch(summoner);
+                    }, 30000); // 30 second delay
+                }
+                
                 if (this.playerSession.inSession && this.shouldEndSession()) {
                     // End session due to timeout
                     await this.sendSessionEndNotification(summoner);
@@ -107,6 +123,8 @@ class PlayerTracker {
         this.playerSession.gameCount = 0;
         this.playerSession.lastGameCheck = null;
         this.playerSession.currentGameId = null;
+        this.playerSession.lastCompletedGameId = null;
+        this.playerSession.pendingMatchAnalysis = [];
     }
 
     async sendSessionStartNotification(summoner, gameData) {
@@ -187,6 +205,95 @@ class PlayerTracker {
         }
     }
 
+    async analyzeCompletedMatch(summoner) {
+        try {
+            console.log(`Analyzing completed match for ${summoner.gameName}#${summoner.tagLine}`);
+            
+            // Get recent match history to find our completed game
+            const matchIds = await this.riotApi.getMatchHistory(summoner.puuid, this.playerSession.sessionStartTime, 3);
+            
+            if (matchIds.length === 0) {
+                console.log('No recent matches found - match data may not be available yet');
+                return;
+            }
+            
+            // Find the most recent match (should be our completed game)
+            const mostRecentMatchId = matchIds[0];
+            console.log(`Fetching details for match: ${mostRecentMatchId}`);
+            
+            const matchData = await this.riotApi.getMatchDetails(mostRecentMatchId);
+            if (!matchData) {
+                console.log('Failed to fetch match details');
+                return;
+            }
+            
+            // Extract player stats from the match
+            const playerStats = await this.riotApi.getPlayerMatchStats(matchData, summoner.puuid);
+            if (!playerStats) {
+                console.log('Failed to extract player stats from match');
+                return;
+            }
+            
+            // Send post-game notification
+            await this.sendPostGameNotification(summoner, playerStats);
+            
+        } catch (error) {
+            console.error('Error analyzing completed match:', error);
+        }
+    }
+
+    async sendPostGameNotification(summoner, matchStats) {
+        try {
+            const channel = await this.discordClient.channels.fetch(this.playerSession.channelId);
+            
+            // Color based on win/loss
+            const embedColor = matchStats.win ? 0x00ff00 : 0xff0000; // Green for win, red for loss
+            const resultEmoji = matchStats.win ? '🟢' : '🔴';
+            const resultText = matchStats.win ? 'VICTORY' : 'DEFEAT';
+            
+            // Create op.gg URL
+            const opggUrl = this.riotApi.createOpGGUrl(summoner.gameName, summoner.tagLine, matchStats.matchId);
+            
+            const embed = {
+                color: embedColor,
+                title: `🎮 Game ${this.playerSession.gameCount} Complete - ${resultText}!`,
+                description: `**${summoner.gameName}#${summoner.tagLine}** • ${matchStats.championName}`,
+                fields: [
+                    {
+                        name: 'KDA',
+                        value: `${matchStats.kills}/${matchStats.deaths}/${matchStats.assists} (${matchStats.kda} KDA)`,
+                        inline: true
+                    },
+                    {
+                        name: 'CS/min',
+                        value: `${matchStats.csPerMin}/min (${matchStats.cs} total)`,
+                        inline: true
+                    },
+                    {
+                        name: 'Duration',
+                        value: matchStats.gameDuration,
+                        inline: true
+                    },
+                    {
+                        name: 'Match Details',
+                        value: `[View on op.gg](${opggUrl})`,
+                        inline: false
+                    }
+                ],
+                timestamp: new Date(),
+                footer: {
+                    text: 'LoL Paparazzi'
+                }
+            };
+
+            await channel.send({ embeds: [embed] });
+            console.log(`Sent post-game notification: ${resultText} for ${summoner.gameName}#${summoner.tagLine}`);
+            
+        } catch (error) {
+            console.error('Error sending post-game notification:', error);
+        }
+    }
+
     async startTracking() {
         // Try to restore tracking data from previous session
         await this.restoreTrackingData();
@@ -209,6 +316,8 @@ class PlayerTracker {
                 this.playerSession.gameCount = savedData.gameCount || 0;
                 this.playerSession.currentGameId = savedData.currentGameId;
                 this.playerSession.lastGameCheck = savedData.lastGameCheck;
+                this.playerSession.lastCompletedGameId = savedData.lastCompletedGameId;
+                this.playerSession.pendingMatchAnalysis = []; // Always reset this on startup
                 
                 console.log(`🔄 Restored tracking: ${savedData.summonerName} in channel ${savedData.channelId}`);
                 

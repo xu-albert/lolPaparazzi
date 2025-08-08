@@ -146,6 +146,86 @@ class RiotAPI {
         }
         return `${soloRank.tier} ${soloRank.rank} (${soloRank.leaguePoints} LP)`;
     }
+
+    async getMatchHistory(puuid, startTime = null, count = 5) {
+        try {
+            let url = `https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/${puuid}/ids?queue=420&count=${count}`;
+            
+            // Add start time filter if provided (Unix timestamp)
+            if (startTime) {
+                const startTimestamp = Math.floor(startTime.getTime() / 1000);
+                url += `&startTime=${startTimestamp}`;
+            }
+            
+            const response = await axios.get(url, {
+                headers: {
+                    'X-Riot-Token': this.apiKey
+                }
+            });
+            
+            console.log(`Fetched ${response.data.length} recent matches`);
+            return response.data;
+        } catch (error) {
+            console.error('Error fetching match history:', error.response?.data || error.message);
+            return [];
+        }
+    }
+
+    async getMatchDetails(matchId) {
+        try {
+            const response = await axios.get(
+                `https://americas.api.riotgames.com/lol/match/v5/matches/${matchId}`,
+                {
+                    headers: {
+                        'X-Riot-Token': this.apiKey
+                    }
+                }
+            );
+            
+            return response.data;
+        } catch (error) {
+            console.error(`Error fetching match details for ${matchId}:`, error.response?.data || error.message);
+            return null;
+        }
+    }
+
+    async getPlayerMatchStats(matchData, puuid) {
+        try {
+            // Find the participant data for our player
+            const participant = matchData.info.participants.find(p => p.puuid === puuid);
+            if (!participant) {
+                console.error('Player not found in match data');
+                return null;
+            }
+
+            const gameDurationMinutes = Math.floor(matchData.info.gameDuration / 60);
+            const csPerMin = gameDurationMinutes > 0 ? (participant.totalMinionsKilled / gameDurationMinutes).toFixed(1) : '0.0';
+            
+            return {
+                win: participant.win,
+                championName: participant.championName,
+                kills: participant.kills,
+                deaths: participant.deaths,
+                assists: participant.assists,
+                kda: participant.deaths > 0 ? ((participant.kills + participant.assists) / participant.deaths).toFixed(2) : 'Perfect',
+                cs: participant.totalMinionsKilled,
+                csPerMin: csPerMin,
+                gameDuration: `${Math.floor(gameDurationMinutes)}:${(matchData.info.gameDuration % 60).toString().padStart(2, '0')}`,
+                gameMode: matchData.info.gameMode,
+                queueType: matchData.info.queueId,
+                matchId: matchData.metadata.matchId
+            };
+        } catch (error) {
+            console.error('Error parsing player match stats:', error);
+            return null;
+        }
+    }
+
+    createOpGGUrl(gameName, tagLine, matchId) {
+        // Extract the NA1_ prefix and match ID number for op.gg URL
+        const matchNumber = matchId.replace('NA1_', '');
+        return `https://op.gg/summoners/na/${gameName}-${tagLine}/matches/${matchNumber}`;
+    }
 }
 
 module.exports = RiotAPI;
