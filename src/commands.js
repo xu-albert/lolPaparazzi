@@ -102,6 +102,13 @@ function createCommands(riotApi, tracker) {
                     } else {
                         embed.setDescription(`Tracking **${tracker.playerSession.summonerName}**`);
                         
+                        // Add champion thumbnail if player is in game
+                        if (metrics.isInGame && metrics.currentChampion) {
+                            // Use champion square image as thumbnail
+                            const championImageUrl = `https://ddragon.leagueoflegends.com/cdn/14.1.1/img/champion/${metrics.currentChampion.replace(/[^a-zA-Z0-9]/g, '')}.png`;
+                            embed.setThumbnail(championImageUrl);
+                        }
+                        
                         // Status and games
                         const fields = [
                             { 

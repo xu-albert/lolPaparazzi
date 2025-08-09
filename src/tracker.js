@@ -360,12 +360,10 @@ class PlayerTracker {
             // Champion image URL from Data Dragon
             const championImageUrl = `https://ddragon.leagueoflegends.com/cdn/14.1.1/img/champion/${matchStats.championName}.png`;
             
-            // Build LP change text
+            // Build LP change text - only show for wins (positive feedback only)
             let lpText = '';
-            if (lpChange) {
-                const lpChangeText = lpChange.change > 0 ? `+${lpChange.change}` : `${lpChange.change}`;
-                const lpEmoji = lpChange.change > 0 ? '📈' : '📉';
-                lpText = `${lpEmoji} ${lpChangeText} LP (${lpChange.current} LP)`;
+            if (lpChange && matchStats.win && lpChange.change > 0) {
+                lpText = `📈 +${lpChange.change} LP (${lpChange.current} LP)`;
             }
             
             const embed = {
@@ -715,6 +713,7 @@ class PlayerTracker {
                 durationText,
                 isInGame: isInRankedGame,
                 currentGame,
+                currentChampion: isInRankedGame ? champion : null,
                 sessionStats: this.playerSession.sessionStats,
                 sessionStartLP: this.playerSession.sessionStartLP,
                 currentLP: this.playerSession.currentLP
