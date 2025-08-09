@@ -62,6 +62,53 @@ class PersistenceManager {
                 console.log('ℹ️ Column migration skipped (likely already exist):', migrationError.message);
             }
             
+            // Create session games table for individual game records
+            await this.pool.query(`
+                CREATE TABLE IF NOT EXISTS session_games (
+                    id SERIAL PRIMARY KEY,
+                    player_session_id INTEGER,
+                    match_id VARCHAR(255) NOT NULL,
+                    champion VARCHAR(255) NOT NULL,
+                    champion_id INTEGER,
+                    win BOOLEAN NOT NULL,
+                    kills INTEGER NOT NULL,
+                    deaths INTEGER NOT NULL,
+                    assists INTEGER NOT NULL,
+                    kda_ratio DECIMAL(5,2),
+                    cs INTEGER NOT NULL,
+                    cs_per_min DECIMAL(4,1),
+                    game_duration_seconds INTEGER NOT NULL,
+                    game_duration_text VARCHAR(20),
+                    lp_change INTEGER,
+                    game_start_time TIMESTAMP WITH TIME ZONE NOT NULL,
+                    game_end_time TIMESTAMP WITH TIME ZONE NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (player_session_id) REFERENCES player_tracking(id) ON DELETE CASCADE
+                )
+            `);
+            console.log('✅ Session games table initialized');
+
+            // Create session stats table for aggregated statistics
+            await this.pool.query(`
+                CREATE TABLE IF NOT EXISTS session_stats (
+                    id SERIAL PRIMARY KEY,
+                    player_session_id INTEGER UNIQUE,
+                    wins INTEGER DEFAULT 0,
+                    losses INTEGER DEFAULT 0,
+                    total_lp_gained INTEGER DEFAULT 0,
+                    best_game_kda DECIMAL(5,2),
+                    best_game_champion VARCHAR(255),
+                    best_game_match_id VARCHAR(255),
+                    worst_game_kda DECIMAL(5,2),
+                    worst_game_champion VARCHAR(255),
+                    worst_game_match_id VARCHAR(255),
+                    champion_stats JSONB, -- {championName: {games, wins, losses}}
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (player_session_id) REFERENCES player_tracking(id) ON DELETE CASCADE
+                )
+            `);
+            console.log('✅ Session stats table initialized');
+
             // Create pending match analysis queue table
             await this.pool.query(`
                 CREATE TABLE IF NOT EXISTS pending_match_analysis (
@@ -109,9 +156,10 @@ class PersistenceManager {
                         session_start_lp, current_lp, updated_at
                     )
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
+                    RETURNING id
                 `;
                 
-                await this.pool.query(query, [
+                const result = await this.pool.query(query, [
                     playerSession.channelId,
                     playerSession.summonerName,
                     playerSession.originalInput,
@@ -128,6 +176,9 @@ class PersistenceManager {
                 ]);
                 
                 await this.pool.query('COMMIT');
+                
+                // Return the session ID for future use
+                return result.rows[0].id;
             } catch (insertError) {
                 await this.pool.query('ROLLBACK');
                 throw insertError;
@@ -156,6 +207,7 @@ class PersistenceManager {
                 console.log(`🎮 Session active: ${row.in_session}, Games: ${row.game_count}`);
                 
                 return {
+                    id: row.id, // Add session ID for foreign key relationships
                     channelId: row.channel_id,
                     summonerName: row.summoner_name,
                     originalInput: row.original_input,
@@ -306,6 +358,197 @@ class PersistenceManager {
             }
         } catch (error) {
             console.error('❌ Error cleaning up old analysis:', error.message);
+        }
+    }
+
+    // Save individual game record to database
+    async saveGameRecord(playerSessionId, gameData, matchData) {
+        if (!this.databaseAvailable) {
+            console.log('⚠️ Cannot save game record - database not configured');
+            return;
+        }
+        
+        try {
+            const gameDurationSeconds = Math.floor(matchData.info.gameDuration);
+            const gameStartTime = new Date(matchData.info.gameStartTimestamp);
+            const gameEndTime = new Date(matchData.info.gameEndTimestamp);
+            
+            const query = `
+                INSERT INTO session_games (
+                    player_session_id, match_id, champion, champion_id, win,
+                    kills, deaths, assists, kda_ratio, cs, cs_per_min,
+                    game_duration_seconds, game_duration_text, lp_change,
+                    game_start_time, game_end_time
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                RETURNING id
+            `;
+            
+            const kdaValue = gameData.kda === 'Perfect' ? 99.0 : parseFloat(gameData.kda);
+            
+            const result = await this.pool.query(query, [
+                playerSessionId,
+                gameData.matchId,
+                gameData.championName,
+                null, // We'll need to pass championId separately if needed
+                gameData.win,
+                gameData.kills,
+                gameData.deaths,
+                gameData.assists,
+                kdaValue,
+                gameData.cs,
+                parseFloat(gameData.csPerMin),
+                gameDurationSeconds,
+                gameData.gameDuration,
+                gameData.lpChange || null,
+                gameStartTime,
+                gameEndTime
+            ]);
+            
+            console.log(`💾 Saved game record (ID: ${result.rows[0].id}): ${gameData.championName} ${gameData.win ? 'W' : 'L'}`);
+            return result.rows[0].id;
+            
+        } catch (error) {
+            console.error('❌ Error saving game record:', error.message);
+        }
+    }
+
+    // Save session statistics to database
+    async saveSessionStats(playerSessionId, sessionStats) {
+        if (!this.databaseAvailable) {
+            console.log('⚠️ Cannot save session stats - database not configured');
+            return;
+        }
+        
+        try {
+            const query = `
+                INSERT INTO session_stats (
+                    player_session_id, wins, losses, total_lp_gained,
+                    best_game_kda, best_game_champion, best_game_match_id,
+                    worst_game_kda, worst_game_champion, worst_game_match_id,
+                    champion_stats
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                ON CONFLICT (player_session_id)
+                DO UPDATE SET
+                    wins = EXCLUDED.wins,
+                    losses = EXCLUDED.losses,
+                    total_lp_gained = EXCLUDED.total_lp_gained,
+                    best_game_kda = EXCLUDED.best_game_kda,
+                    best_game_champion = EXCLUDED.best_game_champion,
+                    best_game_match_id = EXCLUDED.best_game_match_id,
+                    worst_game_kda = EXCLUDED.worst_game_kda,
+                    worst_game_champion = EXCLUDED.worst_game_champion,
+                    worst_game_match_id = EXCLUDED.worst_game_match_id,
+                    champion_stats = EXCLUDED.champion_stats,
+                    updated_at = CURRENT_TIMESTAMP
+            `;
+            
+            await this.pool.query(query, [
+                playerSessionId,
+                sessionStats.wins,
+                sessionStats.losses,
+                sessionStats.lpGained,
+                sessionStats.bestGame ? sessionStats.bestGame.kdaValue : null,
+                sessionStats.bestGame ? sessionStats.bestGame.champion : null,
+                sessionStats.bestGame ? sessionStats.bestGame.matchId : null,
+                sessionStats.worstGame ? sessionStats.worstGame.kdaValue : null,
+                sessionStats.worstGame ? sessionStats.worstGame.champion : null,
+                sessionStats.worstGame ? sessionStats.worstGame.matchId : null,
+                JSON.stringify(sessionStats.champions)
+            ]);
+            
+            console.log(`📊 Saved session stats: ${sessionStats.wins}W-${sessionStats.losses}L`);
+            
+        } catch (error) {
+            console.error('❌ Error saving session stats:', error.message);
+        }
+    }
+
+    // Load session games from database
+    async loadSessionGames(playerSessionId) {
+        if (!this.databaseAvailable) {
+            return [];
+        }
+        
+        try {
+            const result = await this.pool.query(`
+                SELECT * FROM session_games 
+                WHERE player_session_id = $1 
+                ORDER BY game_start_time ASC
+            `, [playerSessionId]);
+            
+            const games = result.rows.map(row => ({
+                champion: row.champion,
+                win: row.win,
+                kda: row.kda_ratio === 99 ? 'Perfect' : row.kda_ratio.toString(),
+                cs: row.cs,
+                csPerMin: row.cs_per_min.toString(),
+                duration: row.game_duration_text,
+                lpChange: row.lp_change,
+                matchId: row.match_id,
+                gameStartTime: row.game_start_time,
+                gameEndTime: row.game_end_time
+            }));
+            
+            console.log(`📥 Loaded ${games.length} session games from database`);
+            return games;
+            
+        } catch (error) {
+            console.error('❌ Error loading session games:', error.message);
+            return [];
+        }
+    }
+
+    // Load session stats from database
+    async loadSessionStats(playerSessionId) {
+        if (!this.databaseAvailable) {
+            return null;
+        }
+        
+        try {
+            const result = await this.pool.query(`
+                SELECT * FROM session_stats WHERE player_session_id = $1
+            `, [playerSessionId]);
+            
+            if (result.rows.length === 0) {
+                return null;
+            }
+            
+            const row = result.rows[0];
+            const stats = {
+                wins: row.wins,
+                losses: row.losses,
+                lpGained: row.total_lp_gained,
+                champions: row.champion_stats || {},
+                bestGame: null,
+                worstGame: null
+            };
+            
+            if (row.best_game_kda) {
+                stats.bestGame = {
+                    kdaValue: parseFloat(row.best_game_kda),
+                    kda: row.best_game_kda === 99 ? 'Perfect' : row.best_game_kda.toString(),
+                    champion: row.best_game_champion,
+                    matchId: row.best_game_match_id
+                };
+            }
+            
+            if (row.worst_game_kda) {
+                stats.worstGame = {
+                    kdaValue: parseFloat(row.worst_game_kda),
+                    kda: row.worst_game_kda === 99 ? 'Perfect' : row.worst_game_kda.toString(),
+                    champion: row.worst_game_champion,
+                    matchId: row.worst_game_match_id
+                };
+            }
+            
+            console.log(`📊 Loaded session stats: ${stats.wins}W-${stats.losses}L`);
+            return stats;
+            
+        } catch (error) {
+            console.error('❌ Error loading session stats:', error.message);
+            return null;
         }
     }
 
