@@ -93,8 +93,8 @@ function createCommands(riotApi, tracker) {
                 if (!tracker.playerSession.summonerName || tracker.playerSession.channelId !== interaction.channelId) {
                     embed.setDescription('No player is currently being tracked in this channel.\n\nUse `/setup <summoner>` to start tracking!');
                 } else {
-                    // Get enhanced session metrics
-                    const metrics = await tracker.getEnhancedSessionMetrics();
+                    // Get real-time session metrics with rate limiting
+                    const metrics = await tracker.getRealTimeSessionMetrics(interaction.user.id);
                     
                     if (metrics.error) {
                         embed.setDescription(`Tracking **${tracker.playerSession.summonerName}**\n\n⚠️ ${metrics.error}`)

@@ -38,6 +38,14 @@ class PlayerTracker {
         // Different polling intervals based on session state
         this.normalPollingInterval = '*/3 * * * *'; // Every 3 minutes when not in session
         this.inGamePollingInterval = '*/5 * * * *'; // Every 5 minutes during session
+        
+        // Rate limiting and caching for /info command
+        this.infoCommandCooldowns = new Map(); // userId -> lastCallTime
+        this.liveDataCache = {
+            data: null,
+            timestamp: null,
+            expiresIn: 15000 // Cache live data for 15 seconds
+        };
     }
 
     async setPlayer(channelId, summonerName, originalInput = null) {
@@ -643,8 +651,67 @@ class PlayerTracker {
         }
     }
 
-    // Enhanced session metrics for accurate /info display
-    async getEnhancedSessionMetrics() {
+    // Real-time session metrics with rate limiting for /info command
+    async getRealTimeSessionMetrics(userId = null) {
+        try {
+            // Rate limiting: Allow each user to call this once every 30 seconds
+            if (userId) {
+                const now = Date.now();
+                const lastCall = this.infoCommandCooldowns.get(userId);
+                
+                if (lastCall && (now - lastCall) < 30000) {
+                    // User is rate limited, return cached data if available
+                    if (this.liveDataCache.data && (now - this.liveDataCache.timestamp) < this.liveDataCache.expiresIn) {
+                        console.log(`🚫 Rate limited user ${userId}, returning cached data`);
+                        return this.liveDataCache.data;
+                    }
+                    
+                    // If no cached data, allow the call but warn
+                    console.log(`⚠️ Rate limited user ${userId} but no cached data, allowing call`);
+                }
+                
+                this.infoCommandCooldowns.set(userId, now);
+            }
+            
+            // Check if we have recent cached data (within 15 seconds)
+            const now = Date.now();
+            if (this.liveDataCache.data && (now - this.liveDataCache.timestamp) < this.liveDataCache.expiresIn) {
+                console.log(`📋 Using cached live data (${Math.floor((now - this.liveDataCache.timestamp) / 1000)}s old)`);
+                return this.liveDataCache.data;
+            }
+            
+            // Fetch fresh data
+            console.log(`🔄 Fetching real-time data for /info command`);
+            const metrics = await this.fetchLiveSessionMetrics();
+            
+            // Cache the results
+            this.liveDataCache = {
+                data: metrics,
+                timestamp: now,
+                expiresIn: 15000
+            };
+            
+            // If we got new live game data, reset polling timer to avoid redundant checks
+            if (metrics.isInGame && metrics.currentGame) {
+                console.log(`⏰ Resetting polling timer due to /info live data fetch`);
+                this.scheduleNextCheck();
+            }
+            
+            return metrics;
+            
+        } catch (error) {
+            console.error('Error getting real-time session metrics:', error);
+            return {
+                isTracking: true,
+                status: 'Error fetching live status',
+                statusEmoji: '❌',
+                error: error.message
+            };
+        }
+    }
+
+    // Core method to fetch live session metrics (used by both real-time and regular calls)
+    async fetchLiveSessionMetrics() {
         try {
             if (!this.playerSession.originalInput) {
                 return {
@@ -671,7 +738,7 @@ class PlayerTracker {
                     // Player is in game - calculate from game start time
                     // Spectator API provides gameStartTime as timestamp and gameLength in seconds
                     if (currentGame.gameStartTime && currentGame.gameLength) {
-                        // Use actual current game length
+                        // Use actual current game length from Riot API
                         sessionDuration = Math.floor(currentGame.gameLength / 60);
                         durationText = `${sessionDuration}min (current game)`;
                     } else if (currentGame.gameStartTime) {
@@ -699,7 +766,7 @@ class PlayerTracker {
             // Determine status and emoji
             let status, statusEmoji, champion = null;
             if (isInRankedGame) {
-                // Calculate current game time properly
+                // Calculate current game time properly using real-time data
                 let gameTimeText = 'Unknown';
                 if (currentGame.gameLength) {
                     const gameMinutes = Math.floor(currentGame.gameLength / 60);
@@ -742,11 +809,12 @@ class PlayerTracker {
                 currentChampion: champion,
                 sessionStats: this.playerSession.sessionStats,
                 sessionStartLP: this.playerSession.sessionStartLP,
-                currentLP: this.playerSession.currentLP
+                currentLP: this.playerSession.currentLP,
+                realTimeFetch: true // Flag to indicate this was a real-time fetch
             };
             
         } catch (error) {
-            console.error('Error getting enhanced session metrics:', error);
+            console.error('Error fetching live session metrics:', error);
             return {
                 isTracking: true,
                 status: 'Error fetching status',
@@ -754,6 +822,12 @@ class PlayerTracker {
                 error: error.message
             };
         }
+    }
+
+    // Enhanced session metrics for accurate /info display (legacy method - now uses cached data)
+    async getEnhancedSessionMetrics() {
+        // For backward compatibility, just use the cached version without user ID
+        return await this.getRealTimeSessionMetrics(null);
     }
 
     async startTracking() {
