@@ -671,7 +671,7 @@ class PlayerTracker {
             }
             
             // Determine status and emoji
-            let status, statusEmoji;
+            let status, statusEmoji, champion = null;
             if (isInRankedGame) {
                 // Calculate current game time properly
                 let gameTimeText = 'Unknown';
@@ -681,7 +681,7 @@ class PlayerTracker {
                 }
                 
                 // Get champion from participant data (Spectator API uses 'participants' array)
-                let champion = 'Unknown Champion';
+                champion = 'Unknown Champion';
                 if (currentGame.participants) {
                     const participant = currentGame.participants.find(p => p.puuid === summoner.puuid);
                     if (participant && participant.championId) {
@@ -713,7 +713,7 @@ class PlayerTracker {
                 durationText,
                 isInGame: isInRankedGame,
                 currentGame,
-                currentChampion: isInRankedGame ? champion : null,
+                currentChampion: champion,
                 sessionStats: this.playerSession.sessionStats,
                 sessionStartLP: this.playerSession.sessionStartLP,
                 currentLP: this.playerSession.currentLP
