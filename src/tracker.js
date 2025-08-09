@@ -20,6 +20,9 @@ class PlayerTracker {
             sessionStartLP: null,
             currentLP: null,
             sessionGames: [], // Array of game results with LP changes
+            // Refined session timing - based on actual gameplay not detection
+            firstGameStartTime: null, // When first match actually began
+            lastGameEndTime: null,   // When last match actually ended
             sessionStats: {
                 wins: 0,
                 losses: 0,
@@ -145,6 +148,9 @@ class PlayerTracker {
         this.playerSession.sessionStartLP = null;
         this.playerSession.currentLP = null;
         this.playerSession.sessionGames = [];
+        // Reset refined session timing
+        this.playerSession.firstGameStartTime = null;
+        this.playerSession.lastGameEndTime = null;
         this.playerSession.sessionStats = {
             wins: 0,
             losses: 0,
@@ -219,10 +225,17 @@ class PlayerTracker {
 
     async sendComprehensiveSessionSummary(summoner, channel) {
         try {
-            const sessionDuration = Math.floor((new Date() - this.playerSession.sessionStartTime) / 1000 / 60); // minutes
-            const hours = Math.floor(sessionDuration / 60);
-            const minutes = sessionDuration % 60;
-            const durationText = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+            // Calculate session span using refined timing (first game start to last game end)
+            let sessionSpanMinutes = 0;
+            let durationText = 'No games tracked';
+            
+            if (this.playerSession.firstGameStartTime && this.playerSession.lastGameEndTime) {
+                sessionSpanMinutes = Math.floor((this.playerSession.lastGameEndTime - this.playerSession.firstGameStartTime) / 1000 / 60);
+                const hours = Math.floor(sessionSpanMinutes / 60);
+                const minutes = sessionSpanMinutes % 60;
+                durationText = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+                console.log(`📊 Refined session duration: ${durationText} (from ${this.playerSession.firstGameStartTime.toISOString()} to ${this.playerSession.lastGameEndTime.toISOString()})`);
+            }
             
             const stats = this.playerSession.sessionStats;
             const totalGames = stats.wins + stats.losses;
@@ -478,8 +491,8 @@ class PlayerTracker {
             // Calculate LP change
             const lpChange = await this.calculateLPChange(summonerData, playerStats);
             
-            // Update session statistics
-            await this.updateSessionStats(playerStats, lpChange);
+            // Update session statistics with match data for timing
+            await this.updateSessionStats(playerStats, lpChange, matchData);
             
             // Send post-game notification with LP data
             await this.sendPostGameNotification(summonerData, playerStats, lpChange);
@@ -523,8 +536,24 @@ class PlayerTracker {
         }
     }
 
-    async updateSessionStats(playerStats, lpChange) {
+    async updateSessionStats(playerStats, lpChange, matchData = null) {
         try {
+            // Update session timing with actual game start/end times
+            if (matchData) {
+                const gameStartTime = new Date(matchData.info.gameStartTimestamp);
+                const gameEndTime = new Date(matchData.info.gameEndTimestamp);
+                
+                // Track first game start time
+                if (!this.playerSession.firstGameStartTime) {
+                    this.playerSession.firstGameStartTime = gameStartTime;
+                    console.log(`🎯 Session first game started: ${gameStartTime.toISOString()}`);
+                }
+                
+                // Always update last game end time
+                this.playerSession.lastGameEndTime = gameEndTime;
+                console.log(`🏁 Session last game ended: ${gameEndTime.toISOString()}`);
+            }
+            
             // Update win/loss counts
             if (playerStats.win) {
                 this.playerSession.sessionStats.wins++;
