@@ -10,7 +10,11 @@
       "Bash(git reset:*)",
       "Bash(node:*)",
       "Bash(rm:*)",
-      "WebFetch(domain:developer.riotgames.com)"
+      "WebFetch(domain:developer.riotgames.com)",
+      "Bash(git config:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(git credential-osxkeychain:*)",
+      "Bash(git credential:*)"
     ],
     "deny": []
   }

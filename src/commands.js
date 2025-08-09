@@ -22,7 +22,7 @@ function createCommands(riotApi, tracker) {
                     }
                     
                     const displayName = `${summoner.gameName}#${summoner.tagLine}`;
-                    tracker.setPlayer(interaction.channelId, displayName, summonerName);
+                    await tracker.setPlayer(interaction.channelId, displayName, summonerName);
                     
                     const embed = new EmbedBuilder()
                         .setColor(0x00ff00)

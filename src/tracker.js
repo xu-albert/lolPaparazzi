@@ -40,14 +40,17 @@ class PlayerTracker {
         this.inGamePollingInterval = '*/5 * * * *'; // Every 5 minutes during session
     }
 
-    setPlayer(channelId, summonerName, originalInput = null) {
+    async setPlayer(channelId, summonerName, originalInput = null) {
         this.playerSession.channelId = channelId;
         this.playerSession.summonerName = summonerName;
         this.playerSession.originalInput = originalInput || summonerName;
         console.log(`Now tracking ${summonerName} in channel ${channelId}`);
         
-        // Save tracking data
-        this.persistence.saveTrackingData(this.playerSession);
+        // Save tracking data and capture session ID
+        const sessionId = await this.persistence.saveTrackingData(this.playerSession);
+        if (sessionId) {
+            this.playerSession.id = sessionId;
+        }
     }
 
     isSessionActive() {
@@ -90,8 +93,11 @@ class PlayerTracker {
                     this.playerSession.currentGameId = gameId;
                     await this.sendSessionStartNotification(summoner, currentGame);
                     console.log(`Session started for ${summoner.gameName}#${summoner.tagLine}`);
-                    // Save session state to database
-                    await this.persistence.saveTrackingData(this.playerSession);
+                    // Save session state to database and capture session ID
+                    const sessionId = await this.persistence.saveTrackingData(this.playerSession);
+                    if (sessionId) {
+                        this.playerSession.id = sessionId;
+                    }
                     // Switch to longer polling interval during session
                     this.scheduleNextCheck();
                 } else if (isNewGame) {
@@ -99,8 +105,11 @@ class PlayerTracker {
                     this.playerSession.gameCount++;
                     this.playerSession.currentGameId = gameId;
                     console.log(`New game detected for ${summoner.gameName}#${summoner.tagLine} (Game ${this.playerSession.gameCount})`);
-                    // Save updated game count to database
-                    await this.persistence.saveTrackingData(this.playerSession);
+                    // Save updated game count to database and capture session ID
+                    const sessionId = await this.persistence.saveTrackingData(this.playerSession);
+                    if (sessionId && !this.playerSession.id) {
+                        this.playerSession.id = sessionId;
+                    }
                 }
                 // If same game, don't increment counter
             } else {
@@ -588,7 +597,8 @@ class PlayerTracker {
                 kda: playerStats.kda,
                 kdaValue: kdaValue,
                 result: playerStats.win ? 'W' : 'L',
-                lpChange: lpChange ? lpChange.change : 0
+                lpChange: lpChange ? lpChange.change : 0,
+                matchId: playerStats.matchId
             };
             
             if (!this.playerSession.sessionStats.bestGame || kdaValue > this.playerSession.sessionStats.bestGame.kdaValue) {
@@ -600,15 +610,31 @@ class PlayerTracker {
             }
             
             // Store detailed game data
-            this.playerSession.sessionGames.push({
-                champion: champion,
+            const sessionGame = {
+                championName: champion,
                 win: playerStats.win,
                 kda: playerStats.kda,
+                kills: playerStats.kills,
+                deaths: playerStats.deaths,
+                assists: playerStats.assists,
                 cs: playerStats.cs,
                 csPerMin: playerStats.csPerMin,
-                duration: playerStats.gameDuration,
-                lpChange: lpChange ? lpChange.change : 0
-            });
+                gameDuration: playerStats.gameDuration,
+                lpChange: lpChange ? lpChange.change : 0,
+                matchId: playerStats.matchId
+            };
+            
+            this.playerSession.sessionGames.push(sessionGame);
+            
+            // Save individual game record to database if we have session data loaded
+            if (this.playerSession.id && matchData) {
+                await this.persistence.saveGameRecord(this.playerSession.id, sessionGame, matchData);
+            }
+            
+            // Save updated session statistics to database
+            if (this.playerSession.id) {
+                await this.persistence.saveSessionStats(this.playerSession.id, this.playerSession.sessionStats);
+            }
             
             console.log(`📊 Session stats updated: ${this.playerSession.sessionStats.wins}W-${this.playerSession.sessionStats.losses}L, ${this.playerSession.sessionStats.lpGained > 0 ? '+' : ''}${this.playerSession.sessionStats.lpGained} LP`);
             
@@ -760,6 +786,25 @@ class PlayerTracker {
                 this.playerSession.lastGameEndTime = savedData.lastGameEndTime;
                 this.playerSession.sessionStartLP = savedData.sessionStartLP;
                 this.playerSession.currentLP = savedData.currentLP;
+                
+                // Load detailed session data from database if available
+                if (savedData.id) {
+                    console.log(`🔍 Loading session games and stats from database (ID: ${savedData.id})...`);
+                    
+                    // Load session games
+                    const sessionGames = await this.persistence.loadSessionGames(savedData.id);
+                    if (sessionGames && sessionGames.length > 0) {
+                        this.playerSession.sessionGames = sessionGames;
+                        console.log(`📥 Restored ${sessionGames.length} session games from database`);
+                    }
+                    
+                    // Load session statistics
+                    const sessionStats = await this.persistence.loadSessionStats(savedData.id);
+                    if (sessionStats) {
+                        this.playerSession.sessionStats = sessionStats;
+                        console.log(`📊 Restored session stats: ${sessionStats.wins}W-${sessionStats.losses}L`);
+                    }
+                }
                 
                 console.log(`🔄 Restored tracking: ${savedData.summonerName} in channel ${savedData.channelId}`);
                 

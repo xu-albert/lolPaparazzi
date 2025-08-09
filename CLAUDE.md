@@ -31,3 +31,4 @@
 - Only tracks ranked solo/duo games (queue ID 420)
 - Session timeout: 15 minutes of inactivity
 - Bot permissions required: Manage Roles (for Paparazzi role creation/assignment)
+- continuously check if variables or data is persisted correctly with each new feature
