@@ -139,17 +139,6 @@ function createCommands(riotApi, tracker) {
                             });
                         }
                         
-                        // Add LP change if available
-                        if (metrics.sessionStartLP !== null && metrics.currentLP !== null) {
-                            const lpChange = metrics.currentLP - metrics.sessionStartLP;
-                            const lpEmoji = lpChange > 0 ? '📈' : lpChange < 0 ? '📉' : '➖';
-                            const lpText = lpChange > 0 ? `+${lpChange}` : `${lpChange}`;
-                            fields.push({
-                                name: 'LP Change',
-                                value: `${lpEmoji} ${lpText} LP (${metrics.currentLP} LP)`,
-                                inline: true
-                            });
-                        }
                         
                         embed.addFields(...fields);
                     }

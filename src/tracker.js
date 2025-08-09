@@ -687,8 +687,8 @@ class PlayerTracker {
                 if (currentGame.participants) {
                     const participant = currentGame.participants.find(p => p.puuid === summoner.puuid);
                     if (participant && participant.championId) {
-                        // Spectator API uses championId (number), convert to name
-                        champion = this.riotApi.getChampionNameById(participant.championId);
+                        // Spectator API uses championId (number), convert to name using Data Dragon
+                        champion = await this.riotApi.getChampionNameById(participant.championId);
                     }
                 }
                 
