@@ -32,3 +32,5 @@
 - Session timeout: 15 minutes of inactivity
 - Bot permissions required: Manage Roles (for Paparazzi role creation/assignment)
 - continuously check if variables or data is persisted correctly with each new feature
+- keep README.md documentation current and comprehensive for developers
+- update README.md whenever new features, commands, or configuration options are added
