@@ -228,9 +228,33 @@ class RiotAPI {
     }
 
     createOpGGUrl(gameName, tagLine, matchId) {
-        // Extract the NA1_ prefix and match ID number for op.gg URL
-        const matchNumber = matchId.replace('NA1_', '');
-        return `https://op.gg/summoners/na/${gameName}-${tagLine}/matches/${matchNumber}`;
+        // op.gg doesn't support direct match links, so link to summoner's match history
+        // Users can find the specific match in their recent games
+        
+        // Extract region from baseURL (e.g., 'na1' from 'https://na1.api.riotgames.com/lol')
+        const regionMatch = this.baseURL.match(/https:\/\/([a-z0-9]+)\.api\.riotgames\.com/);
+        let region = 'na'; // default fallback
+        
+        if (regionMatch) {
+            const apiRegion = regionMatch[1];
+            // Map API regions to op.gg regions
+            const regionMap = {
+                'na1': 'na',
+                'euw1': 'euw',
+                'eun1': 'eune',
+                'kr': 'kr',
+                'jp1': 'jp',
+                'br1': 'br',
+                'la1': 'lan',
+                'la2': 'las',
+                'oc1': 'oce',
+                'tr1': 'tr',
+                'ru': 'ru'
+            };
+            region = regionMap[apiRegion] || 'na';
+        }
+        
+        return `https://op.gg/summoners/${region}/${gameName}-${tagLine}`;
     }
 
     // Load champion data from Riot's Data Dragon API

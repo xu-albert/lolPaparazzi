@@ -416,7 +416,7 @@ class PlayerTracker {
             
             // Add op.gg link
             embed.fields.push({
-                name: 'Match Details',
+                name: 'Match History',
                 value: `[View on op.gg](${opggUrl})`,
                 inline: false
             });
