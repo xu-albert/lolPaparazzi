@@ -93,18 +93,65 @@ function createCommands(riotApi, tracker) {
                 if (!tracker.playerSession.summonerName || tracker.playerSession.channelId !== interaction.channelId) {
                     embed.setDescription('No player is currently being tracked in this channel.\n\nUse `/setup <summoner>` to start tracking!');
                 } else {
-                    const statusEmoji = tracker.playerSession.inSession ? '🎮' : '⏸️';
-                    const statusText = tracker.playerSession.inSession ? 'In Gaming Session' : 'Not Playing';
+                    // Get enhanced session metrics
+                    const metrics = await tracker.getEnhancedSessionMetrics();
                     
-                    embed.setDescription(`Tracking **${tracker.playerSession.summonerName}**`)
-                        .addFields(
-                            { name: 'Status', value: `${statusEmoji} ${statusText}`, inline: true },
-                            { name: 'Session Games', value: tracker.playerSession.gameCount.toString(), inline: true }
-                        );
-                    
-                    if (tracker.playerSession.inSession && tracker.playerSession.sessionStartTime) {
-                        const duration = Math.floor((new Date() - tracker.playerSession.sessionStartTime) / 1000 / 60);
-                        embed.addFields({ name: 'Session Duration', value: `${duration} minutes`, inline: true });
+                    if (metrics.error) {
+                        embed.setDescription(`Tracking **${tracker.playerSession.summonerName}**\n\n⚠️ ${metrics.error}`)
+                            .setColor(0xff9900);
+                    } else {
+                        embed.setDescription(`Tracking **${tracker.playerSession.summonerName}**`);
+                        
+                        // Status and games
+                        const fields = [
+                            { 
+                                name: 'Status', 
+                                value: `${metrics.statusEmoji} ${metrics.status}`, 
+                                inline: true 
+                            }
+                        ];
+                        
+                        // Show game counts if in session
+                        if (tracker.playerSession.inSession) {
+                            fields.push({
+                                name: 'Session Games',
+                                value: `${metrics.completedGames} completed${metrics.isInGame ? ' + 1 current' : ''}`,
+                                inline: true
+                            });
+                            
+                            // Session duration
+                            if (metrics.durationText !== 'No session active') {
+                                fields.push({
+                                    name: 'Session Duration',
+                                    value: metrics.durationText,
+                                    inline: true
+                                });
+                            }
+                        }
+                        
+                        // Add session stats if available
+                        if (metrics.sessionStats && (metrics.sessionStats.wins > 0 || metrics.sessionStats.losses > 0)) {
+                            const winrate = Math.round((metrics.sessionStats.wins / (metrics.sessionStats.wins + metrics.sessionStats.losses)) * 100);
+                            fields.push({
+                                name: 'Session Record',
+                                value: `${metrics.sessionStats.wins}W-${metrics.sessionStats.losses}L (${winrate}% WR)`,
+                                inline: true
+                            });
+                        }
+                        
+                        // Add LP change if available
+                        if (metrics.sessionStartLP !== null && metrics.currentLP !== null) {
+                            const lpChange = metrics.currentLP - metrics.sessionStartLP;
+                            const lpEmoji = lpChange > 0 ? '📈' : lpChange < 0 ? '📉' : '➖';
+                            const lpText = lpChange > 0 ? `+${lpChange}` : `${lpChange}`;
+                            fields.push({
+                                name: 'LP Change',
+                                value: `${lpEmoji} ${lpText} LP (${metrics.currentLP} LP)`,
+                                inline: true
+                            });
+                        }
+                        
+                        embed.addFields(...fields);
                     }
                 }
 

@@ -619,6 +619,98 @@ class PlayerTracker {
         }
     }
 
+    // Enhanced session metrics for accurate /info display
+    async getEnhancedSessionMetrics() {
+        try {
+            if (!this.playerSession.originalInput) {
+                return {
+                    isTracking: false,
+                    status: 'Not tracking any player',
+                    statusEmoji: '❌'
+                };
+            }
+
+            const summoner = await this.riotApi.getSummonerByName(this.playerSession.originalInput);
+            const currentGame = await this.riotApi.getCurrentGame(summoner.puuid);
+            const isInRankedGame = currentGame && this.riotApi.isRankedSoloGame(currentGame);
+            
+            // Calculate accurate completed games count
+            const completedGames = this.playerSession.sessionGames ? this.playerSession.sessionGames.length : 0;
+            const totalGames = completedGames + (isInRankedGame ? 1 : 0);
+            
+            // Calculate session duration using refined timing
+            let sessionDuration = 0;
+            let durationText = 'No session active';
+            
+            if (this.playerSession.inSession) {
+                if (isInRankedGame) {
+                    // Player is in game - use current game start time if available
+                    if (currentGame.gameStartTime) {
+                        const gameStart = new Date(currentGame.gameStartTime);
+                        sessionDuration = Math.floor((new Date() - gameStart) / 1000 / 60);
+                        durationText = `${sessionDuration}min (current game)`;
+                    } else if (this.playerSession.firstGameStartTime) {
+                        sessionDuration = Math.floor((new Date() - this.playerSession.firstGameStartTime) / 1000 / 60);
+                        durationText = `${sessionDuration}min`;
+                    }
+                } else if (this.playerSession.firstGameStartTime && this.playerSession.lastGameEndTime) {
+                    // Between games - show total session span
+                    sessionDuration = Math.floor((this.playerSession.lastGameEndTime - this.playerSession.firstGameStartTime) / 1000 / 60);
+                    const timeSinceLastGame = Math.floor((new Date() - this.playerSession.lastGameEndTime) / 1000 / 60);
+                    durationText = `${sessionDuration}min session (${timeSinceLastGame}min ago)`;
+                } else if (this.playerSession.firstGameStartTime) {
+                    // Fallback to first game start time
+                    sessionDuration = Math.floor((new Date() - this.playerSession.firstGameStartTime) / 1000 / 60);
+                    durationText = `${sessionDuration}min`;
+                }
+            }
+            
+            // Determine status and emoji
+            let status, statusEmoji;
+            if (isInRankedGame) {
+                const gameTime = currentGame.gameLength ? Math.floor(currentGame.gameLength / 60) : 'Unknown';
+                // Get champion from participant data if available
+                const participant = currentGame.participants?.find(p => p.puuid === summoner.puuid);
+                const champion = participant ? participant.championName : 'Unknown Champion';
+                status = `Playing Ranked Solo (${champion}) - ${gameTime}min`;
+                statusEmoji = '🎮';
+            } else if (this.playerSession.inSession && completedGames > 0) {
+                status = `Between Games (${completedGames} completed)`;
+                statusEmoji = '⏸️';
+            } else if (this.playerSession.inSession) {
+                status = 'Session Starting';
+                statusEmoji = '🎯';
+            } else {
+                status = 'Not Playing';
+                statusEmoji = '💤';
+            }
+            
+            return {
+                isTracking: true,
+                status,
+                statusEmoji,
+                completedGames,
+                totalGames,
+                sessionDuration,
+                durationText,
+                isInGame: isInRankedGame,
+                currentGame,
+                sessionStats: this.playerSession.sessionStats,
+                sessionStartLP: this.playerSession.sessionStartLP,
+                currentLP: this.playerSession.currentLP
+            };
+            
+        } catch (error) {
+            console.error('Error getting enhanced session metrics:', error);
+            return {
+                isTracking: true,
+                status: 'Error fetching status',
+                statusEmoji: '❌',
+                error: error.message
+            };
+        }
+    }
+
     async startTracking() {
         // Try to restore tracking data from previous session
         await this.restoreTrackingData();
