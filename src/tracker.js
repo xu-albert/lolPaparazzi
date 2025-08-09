@@ -288,7 +288,7 @@ class PlayerTracker {
             }
             
             const embed = {
-                color: winrate >= 50 ? 0x00ff00 : 0xff9900,
+                color: 0x5865f2, // Discord blue for all session summaries
                 title: '📊 Session Complete',
                 description: `**${summoner.gameName}#${summoner.tagLine}** • ${durationText} • ${totalGames} Games Played`,
                 fields: [
