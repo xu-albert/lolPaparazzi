@@ -729,14 +729,13 @@ class PlayerTracker {
             const completedGames = this.playerSession.sessionGames ? this.playerSession.sessionGames.length : 0;
             const totalGames = completedGames + (isInRankedGame ? 1 : 0);
             
-            // Calculate session duration using refined timing
+            // Calculate session duration with clear, user-friendly descriptions
             let sessionDuration = 0;
             let durationText = 'No session active';
             
             if (this.playerSession.inSession) {
                 if (isInRankedGame) {
-                    // Player is in game - calculate from game start time
-                    // Spectator API provides gameStartTime as timestamp and gameLength in seconds
+                    // Player is currently in a ranked game
                     if (currentGame.gameStartTime && currentGame.gameLength) {
                         // Use actual current game length from Riot API
                         sessionDuration = Math.floor(currentGame.gameLength / 60);
@@ -749,17 +748,26 @@ class PlayerTracker {
                     } else if (this.playerSession.firstGameStartTime) {
                         // Use session start as fallback
                         sessionDuration = Math.floor((new Date() - this.playerSession.firstGameStartTime) / 1000 / 60);
-                        durationText = `${sessionDuration}min`;
+                        durationText = `${sessionDuration}min (current game)`;
                     }
-                } else if (this.playerSession.firstGameStartTime && this.playerSession.lastGameEndTime) {
-                    // Between games - show total session span
-                    sessionDuration = Math.floor((this.playerSession.lastGameEndTime - this.playerSession.firstGameStartTime) / 1000 / 60);
+                } else if (this.playerSession.lastGameEndTime) {
+                    // Between games - show how long they've been idle
                     const timeSinceLastGame = Math.floor((new Date() - this.playerSession.lastGameEndTime) / 1000 / 60);
-                    durationText = `${sessionDuration}min session (${timeSinceLastGame}min ago)`;
+                    
+                    // Calculate total session time for context
+                    if (this.playerSession.firstGameStartTime) {
+                        const totalSessionTime = Math.floor((this.playerSession.lastGameEndTime - this.playerSession.firstGameStartTime) / 1000 / 60);
+                        durationText = `Idle for ${timeSinceLastGame}min (${totalSessionTime}min session)`;
+                    } else {
+                        durationText = `Idle for ${timeSinceLastGame}min`;
+                    }
                 } else if (this.playerSession.firstGameStartTime) {
-                    // Fallback to first game start time
+                    // Session active but no last game end time (shouldn't happen, but fallback)
                     sessionDuration = Math.floor((new Date() - this.playerSession.firstGameStartTime) / 1000 / 60);
-                    durationText = `${sessionDuration}min`;
+                    durationText = `${sessionDuration}min (session active)`;
+                } else {
+                    // Session just started
+                    durationText = 'Session starting';
                 }
             }
             
