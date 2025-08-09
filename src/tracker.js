@@ -15,7 +15,19 @@ class PlayerTracker {
             gameCount: 0,
             currentGameId: null,
             lastCompletedGameId: null,
-            pendingMatchAnalysis: []
+            pendingMatchAnalysis: [],
+            // LP and session tracking
+            sessionStartLP: null,
+            currentLP: null,
+            sessionGames: [], // Array of game results with LP changes
+            sessionStats: {
+                wins: 0,
+                losses: 0,
+                lpGained: 0,
+                champions: {},
+                bestGame: null,
+                worstGame: null
+            }
         };
         this.cronJob = null;
         // Session ends after 15 minutes of no ranked games
@@ -52,6 +64,9 @@ class PlayerTracker {
         if (!this.playerSession.originalInput) return;
         
         try {
+            // Process pending match analysis queue
+            await this.processPendingMatchAnalysis();
+            
             const summoner = await this.riotApi.getSummonerByName(this.playerSession.originalInput);
             const currentGame = await this.riotApi.getCurrentGame(summoner.puuid);
             const now = new Date();
@@ -91,14 +106,15 @@ class PlayerTracker {
                     // Player was in a game but now isn't - game ended!
                     console.log(`Game ended: ${this.playerSession.currentGameId} for ${summoner.gameName}#${summoner.tagLine}`);
                     
-                    // Queue this game for match analysis
+                    // Queue this game for match analysis using persistent queue
                     this.playerSession.lastCompletedGameId = this.playerSession.currentGameId;
                     this.playerSession.currentGameId = null;
                     
-                    // Analyze match after a short delay (match data may take time to appear)
-                    setTimeout(() => {
-                        this.analyzeCompletedMatch(summoner);
-                    }, 30000); // 30 second delay
+                    // Add to persistent queue with 30-second delay (match data may take time to appear)
+                    await this.persistence.queueMatchAnalysis(summoner, this.playerSession.lastCompletedGameId, 0.5);
+                    
+                    // Save updated session state
+                    await this.persistence.saveTrackingData(this.playerSession);
                 }
                 
                 if (this.playerSession.inSession && this.shouldEndSession()) {
@@ -125,6 +141,18 @@ class PlayerTracker {
         this.playerSession.currentGameId = null;
         this.playerSession.lastCompletedGameId = null;
         this.playerSession.pendingMatchAnalysis = [];
+        // Reset LP and session tracking
+        this.playerSession.sessionStartLP = null;
+        this.playerSession.currentLP = null;
+        this.playerSession.sessionGames = [];
+        this.playerSession.sessionStats = {
+            wins: 0,
+            losses: 0,
+            lpGained: 0,
+            champions: {},
+            bestGame: null,
+            worstGame: null
+        };
     }
 
     async sendSessionStartNotification(summoner, gameData) {
@@ -132,6 +160,14 @@ class PlayerTracker {
             const channel = await this.discordClient.channels.fetch(this.playerSession.channelId);
             const rankInfo = await this.riotApi.getRankInfo(summoner.puuid);
             const formattedRank = this.riotApi.formatRankInfo(rankInfo);
+            
+            // Capture starting LP for session tracking
+            const soloRank = rankInfo.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
+            if (soloRank) {
+                this.playerSession.sessionStartLP = soloRank.leaguePoints;
+                this.playerSession.currentLP = soloRank.leaguePoints;
+                console.log(`📊 Session starting LP: ${soloRank.leaguePoints}`);
+            }
             
             const embed = {
                 color: 0x00ff00,
@@ -175,22 +211,65 @@ class PlayerTracker {
     async sendSessionEndNotification(summoner) {
         try {
             const channel = await this.discordClient.channels.fetch(this.playerSession.channelId);
+            await this.sendComprehensiveSessionSummary(summoner, channel);
+        } catch (error) {
+            console.error('Error sending session end notification:', error);
+        }
+    }
+
+    async sendComprehensiveSessionSummary(summoner, channel) {
+        try {
             const sessionDuration = Math.floor((new Date() - this.playerSession.sessionStartTime) / 1000 / 60); // minutes
+            const hours = Math.floor(sessionDuration / 60);
+            const minutes = sessionDuration % 60;
+            const durationText = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+            
+            const stats = this.playerSession.sessionStats;
+            const totalGames = stats.wins + stats.losses;
+            const winrate = totalGames > 0 ? Math.round((stats.wins / totalGames) * 100) : 0;
+            
+            // Calculate LP change
+            let lpSummary = '';
+            if (this.playerSession.sessionStartLP !== null && this.playerSession.currentLP !== null) {
+                const totalLPChange = this.playerSession.currentLP - this.playerSession.sessionStartLP;
+                const lpEmoji = totalLPChange > 0 ? '📈' : totalLPChange < 0 ? '📉' : '➖';
+                const lpChangeText = totalLPChange > 0 ? `+${totalLPChange}` : `${totalLPChange}`;
+                lpSummary = `${lpEmoji} ${lpChangeText} LP net gain`;
+            }
+            
+            // Build champion summary
+            let championSummary = '';
+            const championEntries = Object.entries(stats.champions)
+                .sort(([,a], [,b]) => b.games - a.games)
+                .slice(0, 3);
+                
+            championSummary = championEntries.map(([champ, data]) => 
+                `${champ} (${data.games} games) - ${data.wins}W-${data.losses}L`
+            ).join('\n') || 'No games tracked';
+            
+            // Build performance highlights
+            let highlights = '';
+            if (stats.bestGame) {
+                highlights += `🥇 Best Game: ${stats.bestGame.kda} KDA ${stats.bestGame.champion}`;
+                if (stats.bestGame.lpChange) {
+                    highlights += ` (${stats.bestGame.lpChange > 0 ? '+' : ''}${stats.bestGame.lpChange} LP)`;
+                }
+            }
             
             const embed = {
-                color: 0xff9900,
-                title: '⏹️ Gaming Session Ended',
-                description: `**${summoner.gameName}#${summoner.tagLine}**'s gaming session has ended!`,
+                color: winrate >= 50 ? 0x00ff00 : 0xff9900,
+                title: '📊 Session Complete',
+                description: `**${summoner.gameName}#${summoner.tagLine}** • ${durationText} • ${totalGames} Games Played`,
                 fields: [
                     {
-                        name: 'Session Duration',
-                        value: `${sessionDuration} minutes`,
-                        inline: true
+                        name: '🏆 PERFORMANCE',
+                        value: `${stats.wins > 0 ? '✅' : '❌'} ${stats.wins}W-${stats.losses}L (${winrate}% WR)\n${lpSummary}`,
+                        inline: false
                     },
                     {
-                        name: 'Games Played',
-                        value: this.playerSession.gameCount.toString(),
-                        inline: true
+                        name: '🎮 CHAMPIONS',
+                        value: championSummary,
+                        inline: false
                     }
                 ],
                 timestamp: new Date(),
@@ -198,10 +277,21 @@ class PlayerTracker {
                     text: 'LoL Paparazzi'
                 }
             };
-
+            
+            // Add performance highlights if available
+            if (highlights) {
+                embed.fields.push({
+                    name: '📈 HIGHLIGHTS',
+                    value: highlights,
+                    inline: false
+                });
+            }
+            
             await channel.send({ embeds: [embed] });
+            console.log(`📊 Sent comprehensive session summary: ${stats.wins}W-${stats.losses}L, ${stats.lpGained > 0 ? '+' : ''}${stats.lpGained} LP`);
+            
         } catch (error) {
-            console.error('Error sending session end notification:', error);
+            console.error('Error sending comprehensive session summary:', error);
         }
     }
 
@@ -242,7 +332,7 @@ class PlayerTracker {
         }
     }
 
-    async sendPostGameNotification(summoner, matchStats) {
+    async sendPostGameNotification(summoner, matchStats, lpChange = null) {
         try {
             const channel = await this.discordClient.channels.fetch(this.playerSession.channelId);
             
@@ -254,10 +344,24 @@ class PlayerTracker {
             // Create op.gg URL
             const opggUrl = this.riotApi.createOpGGUrl(summoner.gameName, summoner.tagLine, matchStats.matchId);
             
+            // Champion image URL from Data Dragon
+            const championImageUrl = `https://ddragon.leagueoflegends.com/cdn/14.1.1/img/champion/${matchStats.championName}.png`;
+            
+            // Build LP change text
+            let lpText = '';
+            if (lpChange) {
+                const lpChangeText = lpChange.change > 0 ? `+${lpChange.change}` : `${lpChange.change}`;
+                const lpEmoji = lpChange.change > 0 ? '📈' : '📉';
+                lpText = `${lpEmoji} ${lpChangeText} LP (${lpChange.current} LP)`;
+            }
+            
             const embed = {
                 color: embedColor,
                 title: `🎮 Game ${this.playerSession.gameCount} Complete - ${resultText}!`,
                 description: `**${summoner.gameName}#${summoner.tagLine}** • ${matchStats.championName}`,
+                thumbnail: {
+                    url: championImageUrl
+                },
                 fields: [
                     {
                         name: 'KDA',
@@ -273,11 +377,6 @@ class PlayerTracker {
                         name: 'Duration',
                         value: matchStats.gameDuration,
                         inline: true
-                    },
-                    {
-                        name: 'Match Details',
-                        value: `[View on op.gg](${opggUrl})`,
-                        inline: false
                     }
                 ],
                 timestamp: new Date(),
@@ -285,12 +384,209 @@ class PlayerTracker {
                     text: 'LoL Paparazzi'
                 }
             };
+            
+            // Add LP field if available
+            if (lpText) {
+                embed.fields.push({
+                    name: 'LP Change',
+                    value: lpText,
+                    inline: true
+                });
+            }
+            
+            // Add op.gg link
+            embed.fields.push({
+                name: 'Match Details',
+                value: `[View on op.gg](${opggUrl})`,
+                inline: false
+            });
 
             await channel.send({ embeds: [embed] });
             console.log(`Sent post-game notification: ${resultText} for ${summoner.gameName}#${summoner.tagLine}`);
             
         } catch (error) {
             console.error('Error sending post-game notification:', error);
+        }
+    }
+
+    async processPendingMatchAnalysis() {
+        try {
+            const pendingAnalysis = await this.persistence.getPendingMatchAnalysis();
+            
+            for (const analysis of pendingAnalysis) {
+                try {
+                    console.log(`Processing queued match analysis (ID: ${analysis.id})`);
+                    
+                    const summonerData = analysis.summonerData;
+                    const success = await this.analyzeQueuedMatch(summonerData, analysis.gameId);
+                    
+                    if (success) {
+                        await this.persistence.markAnalysisComplete(analysis.id);
+                    } else {
+                        // Retry if not too many attempts
+                        if (analysis.retryCount < 2) {
+                            await this.persistence.markAnalysisRetry(analysis.id);
+                        } else {
+                            console.log(`Max retries reached for analysis ID: ${analysis.id}`);
+                            await this.persistence.markAnalysisComplete(analysis.id); // Remove failed analysis
+                        }
+                    }
+                } catch (error) {
+                    console.error(`Error processing analysis ID ${analysis.id}:`, error);
+                    await this.persistence.markAnalysisRetry(analysis.id);
+                }
+            }
+            
+            // Periodic cleanup of old entries
+            if (Math.random() < 0.1) { // 10% chance each check
+                await this.persistence.cleanupOldAnalysis();
+            }
+        } catch (error) {
+            console.error('Error processing pending match analysis:', error);
+        }
+    }
+
+    async analyzeQueuedMatch(summonerData, gameId = null) {
+        try {
+            console.log(`Analyzing queued match for ${summonerData.gameName}#${summonerData.tagLine}`);
+            
+            // Get recent match history to find our completed game
+            const matchIds = await this.riotApi.getMatchHistory(summonerData.puuid, this.playerSession.sessionStartTime, 3);
+            
+            if (matchIds.length === 0) {
+                console.log('No recent matches found - match data may not be available yet');
+                return false; // Will retry later
+            }
+            
+            // Find the most recent match (should be our completed game)
+            const mostRecentMatchId = matchIds[0];
+            console.log(`Fetching details for match: ${mostRecentMatchId}`);
+            
+            const matchData = await this.riotApi.getMatchDetails(mostRecentMatchId);
+            if (!matchData) {
+                console.log('Failed to fetch match details');
+                return false; // Will retry later
+            }
+            
+            // Extract player stats from the match
+            const playerStats = await this.riotApi.getPlayerMatchStats(matchData, summonerData.puuid);
+            if (!playerStats) {
+                console.log('Failed to extract player stats from match');
+                return false; // Will retry later
+            }
+            
+            // Calculate LP change
+            const lpChange = await this.calculateLPChange(summonerData, playerStats);
+            
+            // Update session statistics
+            await this.updateSessionStats(playerStats, lpChange);
+            
+            // Send post-game notification with LP data
+            await this.sendPostGameNotification(summonerData, playerStats, lpChange);
+            return true; // Success
+            
+        } catch (error) {
+            console.error('Error analyzing queued match:', error);
+            return false; // Will retry later
+        }
+    }
+
+    async calculateLPChange(summonerData, playerStats) {
+        try {
+            // Get current rank info after the game
+            const currentRankInfo = await this.riotApi.getRankInfo(summonerData.puuid);
+            const soloRank = currentRankInfo.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
+            
+            if (!soloRank || this.playerSession.currentLP === null) {
+                console.log('Unable to calculate LP change - missing rank data');
+                return null;
+            }
+            
+            const newLP = soloRank.leaguePoints;
+            const lpChange = newLP - this.playerSession.currentLP;
+            
+            // Update current LP
+            this.playerSession.currentLP = newLP;
+            
+            console.log(`💰 LP Change: ${lpChange > 0 ? '+' : ''}${lpChange} (${this.playerSession.currentLP} LP total)`);
+            
+            return {
+                change: lpChange,
+                previous: this.playerSession.currentLP - lpChange,
+                current: this.playerSession.currentLP,
+                tier: soloRank.tier,
+                rank: soloRank.rank
+            };
+        } catch (error) {
+            console.error('Error calculating LP change:', error);
+            return null;
+        }
+    }
+
+    async updateSessionStats(playerStats, lpChange) {
+        try {
+            // Update win/loss counts
+            if (playerStats.win) {
+                this.playerSession.sessionStats.wins++;
+            } else {
+                this.playerSession.sessionStats.losses++;
+            }
+            
+            // Update LP gained/lost
+            if (lpChange) {
+                this.playerSession.sessionStats.lpGained += lpChange.change;
+            }
+            
+            // Update champion stats
+            const champion = playerStats.championName;
+            if (!this.playerSession.sessionStats.champions[champion]) {
+                this.playerSession.sessionStats.champions[champion] = {
+                    games: 0,
+                    wins: 0,
+                    losses: 0
+                };
+            }
+            
+            this.playerSession.sessionStats.champions[champion].games++;
+            if (playerStats.win) {
+                this.playerSession.sessionStats.champions[champion].wins++;
+            } else {
+                this.playerSession.sessionStats.champions[champion].losses++;
+            }
+            
+            // Track best/worst games by KDA
+            const kdaValue = playerStats.kda === 'Perfect' ? 99 : parseFloat(playerStats.kda);
+            const gameData = {
+                champion: champion,
+                kda: playerStats.kda,
+                kdaValue: kdaValue,
+                result: playerStats.win ? 'W' : 'L',
+                lpChange: lpChange ? lpChange.change : 0
+            };
+            
+            if (!this.playerSession.sessionStats.bestGame || kdaValue > this.playerSession.sessionStats.bestGame.kdaValue) {
+                this.playerSession.sessionStats.bestGame = gameData;
+            }
+            
+            if (!this.playerSession.sessionStats.worstGame || kdaValue < this.playerSession.sessionStats.worstGame.kdaValue) {
+                this.playerSession.sessionStats.worstGame = gameData;
+            }
+            
+            // Store detailed game data
+            this.playerSession.sessionGames.push({
+                champion: champion,
+                win: playerStats.win,
+                kda: playerStats.kda,
+                cs: playerStats.cs,
+                csPerMin: playerStats.csPerMin,
+                duration: playerStats.gameDuration,
+                lpChange: lpChange ? lpChange.change : 0
+            });
+            
+            console.log(`📊 Session stats updated: ${this.playerSession.sessionStats.wins}W-${this.playerSession.sessionStats.losses}L, ${this.playerSession.sessionStats.lpGained > 0 ? '+' : ''}${this.playerSession.sessionStats.lpGained} LP`);
+            
+        } catch (error) {
+            console.error('Error updating session stats:', error);
         }
     }
 
@@ -324,12 +620,45 @@ class PlayerTracker {
                 if (this.playerSession.inSession) {
                     const sessionDuration = Math.floor((new Date() - this.playerSession.sessionStartTime) / 1000 / 60);
                     console.log(`🎮 Resumed active session: ${this.playerSession.gameCount} games, ${sessionDuration} minutes`);
-                }
+                    
+                    // Check for game completion during downtime
+                    await this.checkForMissedGameCompletion();
+                    
+                    // Immediately check current game state to minimize downtime
+                    await this.checkPlayer();
             } else {
                 console.log('ℹ️ No tracking data to restore');
             }
         } catch (error) {
             console.error('Error restoring tracking data:', error.message);
+        }
+    }
+
+    async checkForMissedGameCompletion() {
+        try {
+            // If we had a currentGameId when we shut down, check if that game completed
+            if (this.playerSession.currentGameId && this.playerSession.originalInput) {
+                console.log(`🔍 Checking for missed game completion during downtime...`);
+                
+                const summoner = await this.riotApi.getSummonerByName(this.playerSession.originalInput);
+                const currentGame = await this.riotApi.getCurrentGame(summoner.puuid);
+                
+                // If player is not in game now, but we had a game ID saved, that game completed during downtime
+                if (!currentGame || !this.riotApi.isRankedSoloGame(currentGame)) {
+                    console.log(`🎮 Detected missed game completion: ${this.playerSession.currentGameId}`);
+                    
+                    // Queue the completed game for analysis
+                    this.playerSession.lastCompletedGameId = this.playerSession.currentGameId;
+                    this.playerSession.currentGameId = null;
+                    
+                    await this.persistence.queueMatchAnalysis(summoner, this.playerSession.lastCompletedGameId, 0.1); // Quick analysis
+                    await this.persistence.saveTrackingData(this.playerSession);
+                    
+                    console.log(`📝 Queued missed game for analysis`);
+                }
+            }
+        } catch (error) {
+            console.error('Error checking for missed game completion:', error);
         }
     }
 
