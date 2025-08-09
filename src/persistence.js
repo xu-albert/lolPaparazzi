@@ -48,6 +48,20 @@ class PersistenceManager {
             `);
             console.log('✅ Database table initialized');
             
+            // Add new columns if they don't exist (migration for existing databases)
+            try {
+                await this.pool.query(`
+                    ALTER TABLE player_tracking 
+                    ADD COLUMN IF NOT EXISTS first_game_start_time TIMESTAMP WITH TIME ZONE,
+                    ADD COLUMN IF NOT EXISTS last_game_end_time TIMESTAMP WITH TIME ZONE,
+                    ADD COLUMN IF NOT EXISTS session_start_lp INTEGER,
+                    ADD COLUMN IF NOT EXISTS current_lp INTEGER
+                `);
+                console.log('✅ Database columns migrated');
+            } catch (migrationError) {
+                console.log('ℹ️ Column migration skipped (likely already exist):', migrationError.message);
+            }
+            
             // Create pending match analysis queue table
             await this.pool.query(`
                 CREATE TABLE IF NOT EXISTS pending_match_analysis (
@@ -79,35 +93,45 @@ class PersistenceManager {
         }
         
         try {
-            // Clear existing data and insert new (simple upsert for single-user bot)
-            await this.pool.query('DELETE FROM player_tracking');
+            // Simple approach: Clear and insert (safer for single-user bot)
+            // But make it atomic to prevent data loss
+            await this.pool.query('BEGIN');
             
-            const query = `
-                INSERT INTO player_tracking (
-                    channel_id, summoner_name, original_input, in_session,
-                    session_start_time, game_count, current_game_id, 
-                    last_game_check, last_completed_game_id,
-                    first_game_start_time, last_game_end_time, 
-                    session_start_lp, current_lp, updated_at
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
-            `;
-            
-            await this.pool.query(query, [
-                playerSession.channelId,
-                playerSession.summonerName,
-                playerSession.originalInput,
-                playerSession.inSession,
-                playerSession.sessionStartTime,
-                playerSession.gameCount,
-                playerSession.currentGameId,
-                playerSession.lastGameCheck,
-                playerSession.lastCompletedGameId,
-                playerSession.firstGameStartTime,
-                playerSession.lastGameEndTime,
-                playerSession.sessionStartLP,
-                playerSession.currentLP
-            ]);
+            try {
+                await this.pool.query('DELETE FROM player_tracking');
+                
+                const query = `
+                    INSERT INTO player_tracking (
+                        channel_id, summoner_name, original_input, in_session,
+                        session_start_time, game_count, current_game_id, 
+                        last_game_check, last_completed_game_id,
+                        first_game_start_time, last_game_end_time, 
+                        session_start_lp, current_lp, updated_at
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
+                `;
+                
+                await this.pool.query(query, [
+                    playerSession.channelId,
+                    playerSession.summonerName,
+                    playerSession.originalInput,
+                    playerSession.inSession,
+                    playerSession.sessionStartTime,
+                    playerSession.gameCount,
+                    playerSession.currentGameId,
+                    playerSession.lastGameCheck,
+                    playerSession.lastCompletedGameId,
+                    playerSession.firstGameStartTime,
+                    playerSession.lastGameEndTime,
+                    playerSession.sessionStartLP,
+                    playerSession.currentLP
+                ]);
+                
+                await this.pool.query('COMMIT');
+            } catch (insertError) {
+                await this.pool.query('ROLLBACK');
+                throw insertError;
+            }
             
             console.log('💾 Full session state saved to database');
         } catch (error) {
