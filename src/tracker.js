@@ -258,13 +258,16 @@ class PlayerTracker {
             const totalGames = stats.wins + stats.losses;
             const winrate = totalGames > 0 ? Math.round((stats.wins / totalGames) * 100) : 0;
             
-            // Calculate LP change
+            // Calculate LP change - only show positive gains to encourage climbing
             let lpSummary = '';
             if (this.playerSession.sessionStartLP !== null && this.playerSession.currentLP !== null) {
                 const totalLPChange = this.playerSession.currentLP - this.playerSession.sessionStartLP;
-                const lpEmoji = totalLPChange > 0 ? '📈' : totalLPChange < 0 ? '📉' : '➖';
-                const lpChangeText = totalLPChange > 0 ? `+${totalLPChange}` : `${totalLPChange}`;
-                lpSummary = `${lpEmoji} ${lpChangeText} LP net gain`;
+                
+                // Only display LP gains, hide losses to maintain positive feedback
+                if (totalLPChange > 0) {
+                    lpSummary = `📈 +${totalLPChange} LP gained`;
+                }
+                // For losses or neutral, don't show LP change - keep it positive!
             }
             
             // Build champion summary
@@ -277,13 +280,11 @@ class PlayerTracker {
                 `${champ} (${data.games} games) - ${data.wins}W-${data.losses}L`
             ).join('\n') || 'No games tracked';
             
-            // Build performance highlights
+            // Build performance highlights - focus on gameplay performance, not LP
             let highlights = '';
             if (stats.bestGame) {
-                highlights += `🥇 Best Game: ${stats.bestGame.kda} KDA ${stats.bestGame.champion}`;
-                if (stats.bestGame.lpChange) {
-                    highlights += ` (${stats.bestGame.lpChange > 0 ? '+' : ''}${stats.bestGame.lpChange} LP)`;
-                }
+                highlights += `🥇 Best Game: ${stats.bestGame.kda} KDA on ${stats.bestGame.champion}`;
+                // Removed LP display from highlights - keep focus on gameplay achievements
             }
             
             const embed = {
@@ -293,7 +294,7 @@ class PlayerTracker {
                 fields: [
                     {
                         name: '🏆 PERFORMANCE',
-                        value: `${stats.wins > 0 ? '✅' : '❌'} ${stats.wins}W-${stats.losses}L (${winrate}% WR)\n${lpSummary}`,
+                        value: `${stats.wins > 0 ? '✅' : '❌'} ${stats.wins}W-${stats.losses}L (${winrate}% WR)${lpSummary ? '\n' + lpSummary : ''}`,
                         inline: false
                     },
                     {
