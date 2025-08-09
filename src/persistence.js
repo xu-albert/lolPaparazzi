@@ -38,11 +38,29 @@ class PersistenceManager {
                     current_game_id VARCHAR(255),
                     last_game_check TIMESTAMP WITH TIME ZONE,
                     last_completed_game_id VARCHAR(255),
+                    first_game_start_time TIMESTAMP WITH TIME ZONE,
+                    last_game_end_time TIMESTAMP WITH TIME ZONE,
+                    session_start_lp INTEGER,
+                    current_lp INTEGER,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                 )
             `);
             console.log('✅ Database table initialized');
+            
+            // Create pending match analysis queue table
+            await this.pool.query(`
+                CREATE TABLE IF NOT EXISTS pending_match_analysis (
+                    id SERIAL PRIMARY KEY,
+                    summoner_puuid VARCHAR(255) NOT NULL,
+                    game_id VARCHAR(255),
+                    summoner_data JSONB NOT NULL,
+                    scheduled_time TIMESTAMP WITH TIME ZONE NOT NULL,
+                    retry_count INTEGER DEFAULT 0,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+            console.log('✅ Match analysis queue table initialized');
             
             // Check if any existing data
             const countResult = await this.pool.query('SELECT COUNT(*) FROM player_tracking');
@@ -68,9 +86,11 @@ class PersistenceManager {
                 INSERT INTO player_tracking (
                     channel_id, summoner_name, original_input, in_session,
                     session_start_time, game_count, current_game_id, 
-                    last_game_check, last_completed_game_id, updated_at
+                    last_game_check, last_completed_game_id,
+                    first_game_start_time, last_game_end_time, 
+                    session_start_lp, current_lp, updated_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
             `;
             
             await this.pool.query(query, [
@@ -82,7 +102,11 @@ class PersistenceManager {
                 playerSession.gameCount,
                 playerSession.currentGameId,
                 playerSession.lastGameCheck,
-                playerSession.lastCompletedGameId
+                playerSession.lastCompletedGameId,
+                playerSession.firstGameStartTime,
+                playerSession.lastGameEndTime,
+                playerSession.sessionStartLP,
+                playerSession.currentLP
             ]);
             
             console.log('💾 Full session state saved to database');
@@ -117,6 +141,10 @@ class PersistenceManager {
                     currentGameId: row.current_game_id,
                     lastGameCheck: row.last_game_check ? new Date(row.last_game_check) : null,
                     lastCompletedGameId: row.last_completed_game_id,
+                    firstGameStartTime: row.first_game_start_time ? new Date(row.first_game_start_time) : null,
+                    lastGameEndTime: row.last_game_end_time ? new Date(row.last_game_end_time) : null,
+                    sessionStartLP: row.session_start_lp,
+                    currentLP: row.current_lp,
                     lastSaved: row.updated_at
                 };
             }
@@ -140,6 +168,120 @@ class PersistenceManager {
             console.log('🗑️ Tracking data cleared from database');
         } catch (error) {
             console.error('❌ Error clearing tracking data:', error.message);
+        }
+    }
+
+    async queueMatchAnalysis(summonerData, gameId = null, delayMinutes = 0.5) {
+        if (!this.databaseAvailable) {
+            console.log('⚠️ Cannot queue match analysis - database not configured');
+            return;
+        }
+        
+        try {
+            const scheduledTime = new Date(Date.now() + delayMinutes * 60 * 1000);
+            
+            const query = `
+                INSERT INTO pending_match_analysis (
+                    summoner_puuid, game_id, summoner_data, scheduled_time
+                )
+                VALUES ($1, $2, $3, $4)
+                RETURNING id
+            `;
+            
+            const result = await this.pool.query(query, [
+                summonerData.puuid,
+                gameId,
+                JSON.stringify(summonerData),
+                scheduledTime
+            ]);
+            
+            console.log(`📝 Queued match analysis (ID: ${result.rows[0].id}) for ${summonerData.gameName}#${summonerData.tagLine}`);
+            return result.rows[0].id;
+        } catch (error) {
+            console.error('❌ Error queuing match analysis:', error.message);
+        }
+    }
+
+    async getPendingMatchAnalysis() {
+        if (!this.databaseAvailable) {
+            return [];
+        }
+        
+        try {
+            const now = new Date();
+            const result = await this.pool.query(`
+                SELECT * FROM pending_match_analysis 
+                WHERE scheduled_time <= $1 AND retry_count < 3
+                ORDER BY scheduled_time ASC
+                LIMIT 5
+            `, [now]);
+            
+            return result.rows.map(row => ({
+                id: row.id,
+                summonerPuuid: row.summoner_puuid,
+                gameId: row.game_id,
+                summonerData: row.summoner_data,
+                scheduledTime: new Date(row.scheduled_time),
+                retryCount: row.retry_count,
+                createdAt: new Date(row.created_at)
+            }));
+        } catch (error) {
+            console.error('❌ Error fetching pending match analysis:', error.message);
+            return [];
+        }
+    }
+
+    async markAnalysisComplete(analysisId) {
+        if (!this.databaseAvailable) {
+            return;
+        }
+        
+        try {
+            await this.pool.query('DELETE FROM pending_match_analysis WHERE id = $1', [analysisId]);
+            console.log(`✅ Completed match analysis (ID: ${analysisId})`);
+        } catch (error) {
+            console.error('❌ Error marking analysis complete:', error.message);
+        }
+    }
+
+    async markAnalysisRetry(analysisId) {
+        if (!this.databaseAvailable) {
+            return;
+        }
+        
+        try {
+            // Increment retry count and reschedule for 2 minutes later
+            const newScheduledTime = new Date(Date.now() + 2 * 60 * 1000);
+            
+            await this.pool.query(`
+                UPDATE pending_match_analysis 
+                SET retry_count = retry_count + 1, scheduled_time = $2
+                WHERE id = $1
+            `, [analysisId, newScheduledTime]);
+            
+            console.log(`🔄 Rescheduled match analysis (ID: ${analysisId}) for retry`);
+        } catch (error) {
+            console.error('❌ Error rescheduling analysis:', error.message);
+        }
+    }
+
+    async cleanupOldAnalysis() {
+        if (!this.databaseAvailable) {
+            return;
+        }
+        
+        try {
+            // Remove analysis entries older than 24 hours or with too many retries
+            const result = await this.pool.query(`
+                DELETE FROM pending_match_analysis 
+                WHERE created_at < NOW() - INTERVAL '24 hours' OR retry_count >= 3
+            `);
+            
+            if (result.rowCount > 0) {
+                console.log(`🧹 Cleaned up ${result.rowCount} old match analysis entries`);
+            }
+        } catch (error) {
+            console.error('❌ Error cleaning up old analysis:', error.message);
         }
     }
 

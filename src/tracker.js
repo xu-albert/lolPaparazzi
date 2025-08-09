@@ -644,6 +644,12 @@ class PlayerTracker {
                 this.playerSession.lastCompletedGameId = savedData.lastCompletedGameId;
                 this.playerSession.pendingMatchAnalysis = []; // Always reset this on startup
                 
+                // Restore refined session timing and LP tracking
+                this.playerSession.firstGameStartTime = savedData.firstGameStartTime;
+                this.playerSession.lastGameEndTime = savedData.lastGameEndTime;
+                this.playerSession.sessionStartLP = savedData.sessionStartLP;
+                this.playerSession.currentLP = savedData.currentLP;
+                
                 console.log(`🔄 Restored tracking: ${savedData.summonerName} in channel ${savedData.channelId}`);
                 
                 if (this.playerSession.inSession) {
