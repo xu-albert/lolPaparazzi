@@ -634,6 +634,18 @@ class PlayerTracker {
             const currentGame = await this.riotApi.getCurrentGame(summoner.puuid);
             const isInRankedGame = currentGame && this.riotApi.isRankedSoloGame(currentGame);
             
+            // Debug logging to understand Spectator API response structure
+            if (currentGame) {
+                console.log('🔍 Current game data structure:', {
+                    gameId: currentGame.gameId,
+                    gameLength: currentGame.gameLength,
+                    gameStartTime: currentGame.gameStartTime,
+                    participantsCount: currentGame.participants?.length,
+                    sampleParticipant: currentGame.participants?.[0],
+                    keys: Object.keys(currentGame)
+                });
+            }
+            
             // Calculate accurate completed games count
             const completedGames = this.playerSession.sessionGames ? this.playerSession.sessionGames.length : 0;
             const totalGames = completedGames + (isInRankedGame ? 1 : 0);
@@ -644,12 +656,19 @@ class PlayerTracker {
             
             if (this.playerSession.inSession) {
                 if (isInRankedGame) {
-                    // Player is in game - use current game start time if available
-                    if (currentGame.gameStartTime) {
+                    // Player is in game - calculate from game start time
+                    // Spectator API provides gameStartTime as timestamp and gameLength in seconds
+                    if (currentGame.gameStartTime && currentGame.gameLength) {
+                        // Use actual current game length
+                        sessionDuration = Math.floor(currentGame.gameLength / 60);
+                        durationText = `${sessionDuration}min (current game)`;
+                    } else if (currentGame.gameStartTime) {
+                        // Fallback: calculate from game start time
                         const gameStart = new Date(currentGame.gameStartTime);
                         sessionDuration = Math.floor((new Date() - gameStart) / 1000 / 60);
                         durationText = `${sessionDuration}min (current game)`;
                     } else if (this.playerSession.firstGameStartTime) {
+                        // Use session start as fallback
                         sessionDuration = Math.floor((new Date() - this.playerSession.firstGameStartTime) / 1000 / 60);
                         durationText = `${sessionDuration}min`;
                     }
@@ -668,11 +687,24 @@ class PlayerTracker {
             // Determine status and emoji
             let status, statusEmoji;
             if (isInRankedGame) {
-                const gameTime = currentGame.gameLength ? Math.floor(currentGame.gameLength / 60) : 'Unknown';
-                // Get champion from participant data if available
-                const participant = currentGame.participants?.find(p => p.puuid === summoner.puuid);
-                const champion = participant ? participant.championName : 'Unknown Champion';
-                status = `Playing Ranked Solo (${champion}) - ${gameTime}min`;
+                // Calculate current game time properly
+                let gameTimeText = 'Unknown';
+                if (currentGame.gameLength) {
+                    const gameMinutes = Math.floor(currentGame.gameLength / 60);
+                    gameTimeText = `${gameMinutes}min`;
+                }
+                
+                // Get champion from participant data (Spectator API uses 'participants' array)
+                let champion = 'Unknown Champion';
+                if (currentGame.participants) {
+                    const participant = currentGame.participants.find(p => p.puuid === summoner.puuid);
+                    if (participant) {
+                        // Spectator API might use different field names
+                        champion = participant.championName || participant.championId || 'Unknown Champion';
+                    }
+                }
+                
+                status = `Playing Ranked Solo (${champion}) - ${gameTimeText}`;
                 statusEmoji = '🎮';
             } else if (this.playerSession.inSession && completedGames > 0) {
                 status = `Between Games (${completedGames} completed)`;
