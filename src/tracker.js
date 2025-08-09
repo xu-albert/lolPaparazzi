@@ -634,18 +634,6 @@ class PlayerTracker {
             const currentGame = await this.riotApi.getCurrentGame(summoner.puuid);
             const isInRankedGame = currentGame && this.riotApi.isRankedSoloGame(currentGame);
             
-            // Debug logging to understand Spectator API response structure
-            if (currentGame) {
-                console.log('🔍 Current game data structure:', {
-                    gameId: currentGame.gameId,
-                    gameLength: currentGame.gameLength,
-                    gameStartTime: currentGame.gameStartTime,
-                    participantsCount: currentGame.participants?.length,
-                    sampleParticipant: currentGame.participants?.[0],
-                    keys: Object.keys(currentGame)
-                });
-            }
-            
             // Calculate accurate completed games count
             const completedGames = this.playerSession.sessionGames ? this.playerSession.sessionGames.length : 0;
             const totalGames = completedGames + (isInRankedGame ? 1 : 0);
@@ -698,9 +686,9 @@ class PlayerTracker {
                 let champion = 'Unknown Champion';
                 if (currentGame.participants) {
                     const participant = currentGame.participants.find(p => p.puuid === summoner.puuid);
-                    if (participant) {
-                        // Spectator API might use different field names
-                        champion = participant.championName || participant.championId || 'Unknown Champion';
+                    if (participant && participant.championId) {
+                        // Spectator API uses championId (number), convert to name
+                        champion = this.riotApi.getChampionNameById(participant.championId);
                     }
                 }
                 
