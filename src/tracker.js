@@ -626,6 +626,7 @@ class PlayerTracker {
                     
                     // Immediately check current game state to minimize downtime
                     await this.checkPlayer();
+                }
             } else {
                 console.log('ℹ️ No tracking data to restore');
             }
