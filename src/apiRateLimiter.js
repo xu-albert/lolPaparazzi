@@ -30,7 +30,9 @@ class ApiRateLimiter {
             rateLimitedRequests: 0,
             cachedResponses: 0,
             averageResponseTime: 0,
-            lastRequestTime: null
+            lastRequestTime: null,
+            peakRequestsInWindow: 0,
+            peakRequestsTime: null
         };
         
         // Start processing queue
@@ -40,6 +42,11 @@ class ApiRateLimiter {
         this.cacheCleanupInterval = setInterval(() => {
             this.cleanupExpiredCache();
         }, 300000);
+        
+        // Log API usage summary every 30 minutes
+        this.loggingInterval = setInterval(() => {
+            this.logUsageSummary();
+        }, 1800000); // 30 minutes
         
         console.log(`🚦 ApiRateLimiter initialized: ${this.maxRequestsPerWindow} requests per ${this.windowSizeMs / 1000}s`);
     }
@@ -209,6 +216,18 @@ class ApiRateLimiter {
     recordRequest(timestamp) {
         this.requestHistory.push(timestamp);
         this.cleanupOldRequests();
+        
+        // Track peak usage
+        const currentWindowCount = this.requestHistory.length;
+        if (currentWindowCount > this.stats.peakRequestsInWindow) {
+            this.stats.peakRequestsInWindow = currentWindowCount;
+            this.stats.peakRequestsTime = new Date(timestamp);
+            
+            // Log significant peaks (>50% of limit)
+            if (currentWindowCount > this.maxRequestsPerWindow * 0.5) {
+                console.log(`🚨 High API usage: ${currentWindowCount}/${this.maxRequestsPerWindow} requests in window (${Math.round(currentWindowCount/this.maxRequestsPerWindow*100)}% of limit)`);
+            }
+        }
     }
     
     cleanupOldRequests() {
@@ -277,6 +296,31 @@ class ApiRateLimiter {
         }
     }
     
+    logUsageSummary() {
+        if (this.stats.totalRequests === 0) {
+            return; // No activity to log
+        }
+        
+        const cacheHitRate = this.cacheStats.hits + this.cacheStats.misses > 0 
+            ? (this.cacheStats.hits / (this.cacheStats.hits + this.cacheStats.misses) * 100).toFixed(1)
+            : 0;
+            
+        const successRate = this.stats.totalRequests > 0
+            ? (this.stats.successfulRequests / this.stats.totalRequests * 100).toFixed(1)
+            : 0;
+            
+        console.log(`📊 API Usage Summary (30min):`);
+        console.log(`   Requests: ${this.stats.totalRequests} total, ${this.stats.successfulRequests} successful (${successRate}%)`);
+        console.log(`   Rate Limits: ${this.stats.rateLimitedRequests} hit, Peak: ${this.stats.peakRequestsInWindow}/${this.maxRequestsPerWindow} (${Math.round(this.stats.peakRequestsInWindow/this.maxRequestsPerWindow*100)}%)`);
+        console.log(`   Cache: ${cacheHitRate}% hit rate, ${this.cache.size} entries, ${this.stats.cachedResponses} responses served`);
+        console.log(`   Performance: ${Math.round(this.stats.averageResponseTime)}ms avg response time`);
+        
+        if (this.stats.peakRequestsTime) {
+            const peakTime = this.stats.peakRequestsTime.toLocaleTimeString();
+            console.log(`   Peak Usage: ${this.stats.peakRequestsInWindow} requests at ${peakTime}`);
+        }
+    }
+    
     // Utility methods
     generateRequestId() {
         return Math.random().toString(36).substr(2, 9);
@@ -308,7 +352,9 @@ class ApiRateLimiter {
             cacheSize: this.cache.size,
             cacheHitRate: `${cacheHitRate}%`,
             cacheStats: this.cacheStats,
-            rateLimitWindow: `${this.requestHistory.length}/${this.maxRequestsPerWindow} requests in last ${this.windowSizeMs / 1000}s`
+            rateLimitWindow: `${this.requestHistory.length}/${this.maxRequestsPerWindow} requests in last ${this.windowSizeMs / 1000}s`,
+            peakRequestsInWindow: this.stats.peakRequestsInWindow,
+            peakRequestsTime: this.stats.peakRequestsTime
         };
     }
     
@@ -319,6 +365,9 @@ class ApiRateLimiter {
         }
         if (this.cacheCleanupInterval) {
             clearInterval(this.cacheCleanupInterval);
+        }
+        if (this.loggingInterval) {
+            clearInterval(this.loggingInterval);
         }
         
         // Reject all pending requests

@@ -16,6 +16,10 @@ const client = new Client({
 const riotApi = new RiotAPI(config.riot.apiKey);
 const tracker = new PlayerTracker(riotApi, client);
 
+// Global access for debugging/monitoring (use in Railway console)
+global.showApiStats = () => riotApi.logDetailedStats();
+global.riotApi = riotApi;
+
 client.commands = new Collection();
 const commands = createCommands(riotApi, tracker);
 

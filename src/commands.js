@@ -343,50 +343,6 @@ function createCommands(riotApi, tracker) {
                     await interaction.reply({ embeds: [embed] });
                 }
             }
-        },
-        {
-            data: new SlashCommandBuilder()
-                .setName('apistats')
-                .setDescription('Show API rate limiting and caching statistics'),
-            async execute(interaction) {
-                const stats = riotApi.getApiStats();
-                
-                const embed = new EmbedBuilder()
-                    .setColor(0x0099ff)
-                    .setTitle('📊 API Statistics')
-                    .setTimestamp()
-                    .setFooter({ text: 'LoL Paparazzi' });
-
-                const fields = [
-                    {
-                        name: '🌐 Request Stats',
-                        value: `Total: ${stats.totalRequests}\nSuccessful: ${stats.successfulRequests}\nFailed: ${stats.failedRequests}\nRate Limited: ${stats.rateLimitedRequests}`,
-                        inline: true
-                    },
-                    {
-                        name: '💾 Cache Stats',
-                        value: `Hit Rate: ${stats.cacheHitRate}\nSize: ${stats.cacheSize} entries\nCached Responses: ${stats.cachedResponses}`,
-                        inline: true
-                    },
-                    {
-                        name: '⚡ Performance',
-                        value: `Avg Response: ${Math.round(stats.averageResponseTime)}ms\nQueue Size: ${stats.queueSize}\nActive Requests: ${stats.activeRequests}`,
-                        inline: true
-                    }
-                ];
-                
-                if (stats.rateLimitWindow) {
-                    fields.push({
-                        name: '🚦 Rate Limiting',
-                        value: stats.rateLimitWindow,
-                        inline: false
-                    });
-                }
-
-                embed.addFields(...fields);
-
-                await interaction.reply({ embeds: [embed] });
-            }
         }
     ];
 }

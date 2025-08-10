@@ -23,9 +23,28 @@ class RiotAPI {
         console.log('🚀 RiotAPI initialized with rate limiting');
     }
     
-    // Get API usage statistics
+    // Get API usage statistics (for internal use)
     getApiStats() {
         return this.rateLimiter.getStats();
+    }
+    
+    // Log detailed API statistics to console
+    logDetailedStats() {
+        const stats = this.getApiStats();
+        console.log(`\n📊 ===== DETAILED API STATISTICS =====`);
+        console.log(`🌐 Requests: ${stats.totalRequests} total (${stats.successfulRequests} success, ${stats.failedRequests} failed)`);
+        console.log(`🚨 Rate Limits: ${stats.rateLimitedRequests} hit, Current: ${stats.rateLimitWindow}`);
+        console.log(`🏆 Peak Usage: ${stats.peakRequestsInWindow}/${this.rateLimiter.maxRequestsPerWindow} requests (${Math.round(stats.peakRequestsInWindow/this.rateLimiter.maxRequestsPerWindow*100)}% max)`);
+        
+        if (stats.peakRequestsTime) {
+            console.log(`   Peak Time: ${stats.peakRequestsTime.toLocaleString()}`);
+        }
+        
+        console.log(`💾 Cache: ${stats.cacheHitRate} hit rate, ${stats.cacheSize} entries, ${stats.cachedResponses} served`);
+        console.log(`⚡ Performance: ${Math.round(stats.averageResponseTime)}ms avg, Queue: ${stats.queueSize}, Active: ${stats.activeRequests}`);
+        console.log(`=====================================\n`);
+        
+        return stats;
     }
     
     // Cleanup method
