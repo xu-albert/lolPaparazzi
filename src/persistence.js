@@ -140,29 +140,22 @@ class PersistenceManager {
         }
         
         try {
-            // Simple approach: Clear and insert (safer for single-user bot)
-            // But make it atomic to prevent data loss
             await this.pool.query('BEGIN');
             
-            try {
-                await this.pool.query('DELETE FROM player_tracking');
-                
+            if (playerSession.id) {
+                // Update existing player session
                 const query = `
-                    INSERT INTO player_tracking (
-                        channel_id, summoner_name, original_input, in_session,
-                        session_start_time, game_count, current_game_id, 
-                        last_game_check, last_completed_game_id,
-                        first_game_start_time, last_game_end_time, 
-                        session_start_lp, current_lp, updated_at
-                    )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
+                    UPDATE player_tracking SET
+                        in_session = $2, session_start_time = $3, game_count = $4, 
+                        current_game_id = $5, last_game_check = $6, last_completed_game_id = $7,
+                        first_game_start_time = $8, last_game_end_time = $9,
+                        session_start_lp = $10, current_lp = $11, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = $1
                     RETURNING id
                 `;
                 
                 const result = await this.pool.query(query, [
-                    playerSession.channelId,
-                    playerSession.summonerName,
-                    playerSession.originalInput,
+                    playerSession.id,
                     playerSession.inSession,
                     playerSession.sessionStartTime,
                     playerSession.gameCount,
@@ -175,18 +168,99 @@ class PersistenceManager {
                     playerSession.currentLP
                 ]);
                 
-                await this.pool.query('COMMIT');
+                if (result.rows.length === 0) {
+                    throw new Error('Player session not found for update');
+                }
                 
-                // Return the session ID for future use
-                return result.rows[0].id;
-            } catch (insertError) {
-                await this.pool.query('ROLLBACK');
-                throw insertError;
+                await this.pool.query('COMMIT');
+                console.log(`💾 Updated tracking data for session ID: ${playerSession.id}`);
+                return playerSession.id;
+            } else {
+                // Insert new player session (check if this player already exists in this channel)
+                const existingQuery = `
+                    SELECT id FROM player_tracking 
+                    WHERE channel_id = $1 AND summoner_name = $2
+                `;
+                const existingResult = await this.pool.query(existingQuery, [
+                    playerSession.channelId,
+                    playerSession.summonerName
+                ]);
+                
+                if (existingResult.rows.length > 0) {
+                    // Update existing record instead of inserting duplicate
+                    const existingId = existingResult.rows[0].id;
+                    playerSession.id = existingId;
+                    
+                    const updateQuery = `
+                        UPDATE player_tracking SET
+                            original_input = $3, in_session = $4, session_start_time = $5, 
+                            game_count = $6, current_game_id = $7, last_game_check = $8, 
+                            last_completed_game_id = $9, first_game_start_time = $10, 
+                            last_game_end_time = $11, session_start_lp = $12, current_lp = $13,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = $1
+                        RETURNING id
+                    `;
+                    
+                    const result = await this.pool.query(updateQuery, [
+                        existingId,
+                        playerSession.originalInput,
+                        playerSession.inSession,
+                        playerSession.sessionStartTime,
+                        playerSession.gameCount,
+                        playerSession.currentGameId,
+                        playerSession.lastGameCheck,
+                        playerSession.lastCompletedGameId,
+                        playerSession.firstGameStartTime,
+                        playerSession.lastGameEndTime,
+                        playerSession.sessionStartLP,
+                        playerSession.currentLP
+                    ]);
+                    
+                    await this.pool.query('COMMIT');
+                    console.log(`💾 Updated existing player tracking data (ID: ${existingId})`);
+                    return existingId;
+                } else {
+                    // Insert new player session
+                    const insertQuery = `
+                        INSERT INTO player_tracking (
+                            channel_id, summoner_name, original_input, in_session,
+                            session_start_time, game_count, current_game_id, 
+                            last_game_check, last_completed_game_id,
+                            first_game_start_time, last_game_end_time, 
+                            session_start_lp, current_lp, updated_at
+                        )
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
+                        RETURNING id
+                    `;
+                    
+                    const result = await this.pool.query(insertQuery, [
+                        playerSession.channelId,
+                        playerSession.summonerName,
+                        playerSession.originalInput,
+                        playerSession.inSession,
+                        playerSession.sessionStartTime,
+                        playerSession.gameCount,
+                        playerSession.currentGameId,
+                        playerSession.lastGameCheck,
+                        playerSession.lastCompletedGameId,
+                        playerSession.firstGameStartTime,
+                        playerSession.lastGameEndTime,
+                        playerSession.sessionStartLP,
+                        playerSession.currentLP
+                    ]);
+                    
+                    await this.pool.query('COMMIT');
+                    
+                    const sessionId = result.rows[0].id;
+                    console.log(`💾 New player tracking data saved (ID: ${sessionId})`);
+                    return sessionId;
+                }
             }
-            
-            console.log('💾 Full session state saved to database');
         } catch (error) {
+            await this.pool.query('ROLLBACK');
             console.error('❌ Error saving tracking data:', error.message);
+            return null;
         }
     }
 
