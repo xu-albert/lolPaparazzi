@@ -38,9 +38,15 @@ function createCommands(riotApi, tracker) {
                     const embed = new EmbedBuilder()
                         .setColor(0xff0000)
                         .setTitle('❌ Error')
-                        .setDescription(`Could not find summoner "${summonerName}". Please check the spelling and try again.`)
                         .setTimestamp()
                         .setFooter({ text: 'LoL Paparazzi' });
+                    
+                    if (error.message.startsWith('CHANNEL_OCCUPIED:')) {
+                        const currentPlayer = error.message.split(':')[1];
+                        embed.setDescription(`This channel is already tracking **${currentPlayer}**.\n\nUse \`/stop\` first to stop tracking the current player, then try \`/setup\` again with the new player.`);
+                    } else {
+                        embed.setDescription(`Could not find summoner "${summonerName}". Please check the spelling and try again.`);
+                    }
 
                     await interaction.reply({ embeds: [embed] });
                 }
@@ -58,8 +64,8 @@ function createCommands(riotApi, tracker) {
                     tracker.playerSession.channelId = null;
                     tracker.playerSession.summonerName = null;
                     tracker.playerSession.originalInput = null;
-                    // Clear saved data
-                    tracker.persistence.clearTrackingData();
+                    // Clear saved data for this channel only
+                    tracker.persistence.clearTrackingData(interaction.channelId);
                 }
                 
                 const embed = new EmbedBuilder()

@@ -176,50 +176,58 @@ class PersistenceManager {
                 console.log(`💾 Updated tracking data for session ID: ${playerSession.id}`);
                 return playerSession.id;
             } else {
-                // Insert new player session (check if this player already exists in this channel)
+                // Check if any player is already being tracked in this channel
                 const existingQuery = `
-                    SELECT id FROM player_tracking 
-                    WHERE channel_id = $1 AND summoner_name = $2
+                    SELECT id, summoner_name FROM player_tracking 
+                    WHERE channel_id = $1
                 `;
                 const existingResult = await this.pool.query(existingQuery, [
-                    playerSession.channelId,
-                    playerSession.summonerName
+                    playerSession.channelId
                 ]);
                 
                 if (existingResult.rows.length > 0) {
-                    // Update existing record instead of inserting duplicate
-                    const existingId = existingResult.rows[0].id;
-                    playerSession.id = existingId;
+                    const existingPlayer = existingResult.rows[0];
+                    const existingId = existingPlayer.id;
+                    const existingSummonerName = existingPlayer.summoner_name;
                     
-                    const updateQuery = `
-                        UPDATE player_tracking SET
-                            original_input = $3, in_session = $4, session_start_time = $5, 
-                            game_count = $6, current_game_id = $7, last_game_check = $8, 
-                            last_completed_game_id = $9, first_game_start_time = $10, 
-                            last_game_end_time = $11, session_start_lp = $12, current_lp = $13,
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE id = $1
-                        RETURNING id
-                    `;
-                    
-                    const result = await this.pool.query(updateQuery, [
-                        existingId,
-                        playerSession.originalInput,
-                        playerSession.inSession,
-                        playerSession.sessionStartTime,
-                        playerSession.gameCount,
-                        playerSession.currentGameId,
-                        playerSession.lastGameCheck,
-                        playerSession.lastCompletedGameId,
-                        playerSession.firstGameStartTime,
-                        playerSession.lastGameEndTime,
-                        playerSession.sessionStartLP,
-                        playerSession.currentLP
-                    ]);
-                    
-                    await this.pool.query('COMMIT');
-                    console.log(`💾 Updated existing player tracking data (ID: ${existingId})`);
-                    return existingId;
+                    if (existingSummonerName === playerSession.summonerName) {
+                        // Same player - update existing record
+                        playerSession.id = existingId;
+                        
+                        const updateQuery = `
+                            UPDATE player_tracking SET
+                                original_input = $2, in_session = $3, session_start_time = $4, 
+                                game_count = $5, current_game_id = $6, last_game_check = $7, 
+                                last_completed_game_id = $8, first_game_start_time = $9, 
+                                last_game_end_time = $10, session_start_lp = $11, current_lp = $12,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE id = $1
+                            RETURNING id
+                        `;
+                        
+                        const result = await this.pool.query(updateQuery, [
+                            existingId,
+                            playerSession.originalInput,
+                            playerSession.inSession,
+                            playerSession.sessionStartTime,
+                            playerSession.gameCount,
+                            playerSession.currentGameId,
+                            playerSession.lastGameCheck,
+                            playerSession.lastCompletedGameId,
+                            playerSession.firstGameStartTime,
+                            playerSession.lastGameEndTime,
+                            playerSession.sessionStartLP,
+                            playerSession.currentLP
+                        ]);
+                        
+                        await this.pool.query('COMMIT');
+                        console.log(`💾 Updated existing player tracking data (ID: ${existingId})`);
+                        return existingId;
+                    } else {
+                        // Different player already being tracked in this channel
+                        await this.pool.query('ROLLBACK');
+                        throw new Error(`CHANNEL_OCCUPIED:${existingSummonerName}`);
+                    }
                 } else {
                     // Insert new player session
                     const insertQuery = `
@@ -307,15 +315,22 @@ class PersistenceManager {
         }
     }
 
-    async clearTrackingData() {
+    async clearTrackingData(channelId = null) {
         if (!this.databaseAvailable) {
             console.log('ℹ️ Database not available - nothing to clear');
             return;
         }
         
         try {
-            await this.pool.query('DELETE FROM player_tracking');
-            console.log('🗑️ Tracking data cleared from database');
+            if (channelId) {
+                // Clear tracking data for specific channel only
+                await this.pool.query('DELETE FROM player_tracking WHERE channel_id = $1', [channelId]);
+                console.log(`🗑️ Tracking data cleared for channel ${channelId}`);
+            } else {
+                // Clear all tracking data (backward compatibility)
+                await this.pool.query('DELETE FROM player_tracking');
+                console.log('🗑️ All tracking data cleared from database');
+            }
         } catch (error) {
             console.error('❌ Error clearing tracking data:', error.message);
         }
