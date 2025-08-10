@@ -1,4 +1,5 @@
 const axios = require('axios');
+const ApiRateLimiter = require('./apiRateLimiter');
 
 class RiotAPI {
     constructor(apiKey) {
@@ -7,24 +8,55 @@ class RiotAPI {
         // Account API uses regional clusters: americas, asia, europe
         this.accountBaseURL = 'https://americas.api.riotgames.com/riot/account/v1';
         
+        // Initialize rate limiter
+        this.rateLimiter = new ApiRateLimiter({
+            maxRequestsPerWindow: 90,
+            windowSizeMs: 120000, // 2 minutes
+            maxRetries: 3
+        });
+        
         // Champion data caching
         this.championMap = new Map(); // championId -> championName
         this.championDataLoaded = false;
         this.lastChampionUpdate = null;
+        
+        console.log('🚀 RiotAPI initialized with rate limiting');
+    }
+    
+    // Get API usage statistics
+    getApiStats() {
+        return this.rateLimiter.getStats();
+    }
+    
+    // Cleanup method
+    destroy() {
+        if (this.rateLimiter) {
+            this.rateLimiter.destroy();
+        }
+        console.log('🚫 RiotAPI destroyed');
     }
 
     async getSummonerByRiotId(gameName, tagLine = 'NA1') {
         try {
             console.log(`Looking up: ${gameName}#${tagLine}`);
             
+            // Cache key for this summoner lookup
+            const cacheKey = `summoner:${gameName}#${tagLine}`;
+            
             // First get PUUID using Account API
             const accountURL = `${this.accountBaseURL}/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`;
             console.log(`Account API URL: ${accountURL}`);
             
-            const accountResponse = await axios.get(accountURL, {
+            const accountResponse = await this.rateLimiter.queueRequest({
+                method: 'GET',
+                url: accountURL,
                 headers: {
                     'X-Riot-Token': this.apiKey
                 }
+            }, {
+                priority: 'high', // Summoner lookup is high priority
+                cacheKey: `account:${gameName}#${tagLine}`,
+                cacheTTL: 7200000 // Cache account data for 2 hours (rarely changes)
             });
             
             const puuid = accountResponse.data.puuid;
@@ -34,10 +66,16 @@ class RiotAPI {
             const summonerURL = `${this.baseURL}/summoner/v4/summoners/by-puuid/${puuid}`;
             console.log(`Summoner API URL: ${summonerURL}`);
             
-            const summonerResponse = await axios.get(summonerURL, {
+            const summonerResponse = await this.rateLimiter.queueRequest({
+                method: 'GET',
+                url: summonerURL,
                 headers: {
                     'X-Riot-Token': this.apiKey
                 }
+            }, {
+                priority: 'high',
+                cacheKey: `summoner:puuid:${puuid}`,
+                cacheTTL: 7200000 // Cache summoner data for 2 hours (rarely changes)
             });
             
             // Add the riot ID info to the response
@@ -77,16 +115,20 @@ class RiotAPI {
     }
 
 
-    async getCurrentGame(puuid) {
+    async getCurrentGame(puuid, bypassCache = false) {
         try {
-            const response = await axios.get(
-                `${this.baseURL}/spectator/v5/active-games/by-summoner/${puuid}`,
-                {
-                    headers: {
-                        'X-Riot-Token': this.apiKey
-                    }
+            const response = await this.rateLimiter.queueRequest({
+                method: 'GET',
+                url: `${this.baseURL}/spectator/v5/active-games/by-summoner/${puuid}`,
+                headers: {
+                    'X-Riot-Token': this.apiKey
                 }
-            );
+            }, {
+                priority: 'high', // Live game data is high priority
+                cacheKey: `current-game:${puuid}`,
+                cacheTTL: 30000, // Cache for 30 seconds (games change frequently)
+                bypassCache: bypassCache
+            });
             return response.data;
         } catch (error) {
             if (error.response?.status === 404) {
@@ -107,28 +149,32 @@ class RiotAPI {
             
             // Try using PUUID endpoint first (more reliable)
             try {
-                const response = await axios.get(
-                    `${this.baseURL}/league/v4/entries/by-puuid/${summonerIdOrPuuid}`,
-                    {
-                        headers: {
-                            'X-Riot-Token': this.apiKey
-                        }
+                const response = await this.rateLimiter.queueRequest({
+                    method: 'GET',
+                    url: `${this.baseURL}/league/v4/entries/by-puuid/${summonerIdOrPuuid}`,
+                    headers: {
+                        'X-Riot-Token': this.apiKey
                     }
-                );
+                }, {
+                    priority: 'normal'
+                    // No caching for rank data - needs to be fresh after games
+                });
                 console.log('Rank info retrieved using PUUID endpoint');
                 return response.data;
             } catch (puuidError) {
                 console.log('PUUID endpoint failed, trying summoner ID endpoint...');
                 
                 // Fallback to summoner ID endpoint
-                const response = await axios.get(
-                    `${this.baseURL}/league/v4/entries/by-summoner/${summonerIdOrPuuid}`,
-                    {
-                        headers: {
-                            'X-Riot-Token': this.apiKey
-                        }
+                const response = await this.rateLimiter.queueRequest({
+                    method: 'GET',
+                    url: `${this.baseURL}/league/v4/entries/by-summoner/${summonerIdOrPuuid}`,
+                    headers: {
+                        'X-Riot-Token': this.apiKey
                     }
-                );
+                }, {
+                    priority: 'normal'
+                    // No caching for rank data - needs to be fresh after games  
+                });
                 console.log('Rank info retrieved using summoner ID endpoint');
                 return response.data;
             }
@@ -162,10 +208,16 @@ class RiotAPI {
                 url += `&startTime=${startTimestamp}`;
             }
             
-            const response = await axios.get(url, {
+            const response = await this.rateLimiter.queueRequest({
+                method: 'GET',
+                url: url,
                 headers: {
                     'X-Riot-Token': this.apiKey
                 }
+            }, {
+                priority: 'normal',
+                cacheKey: `match-history:${puuid}:${count}:${startTime ? startTime.getTime() : 'all'}`,
+                cacheTTL: 1800000 // Cache match history for 30 minutes (less frequent changes)
             });
             
             console.log(`Fetched ${response.data.length} recent matches`);
@@ -178,13 +230,17 @@ class RiotAPI {
 
     async getMatchDetails(matchId) {
         try {
-            const response = await axios.get(
-                `https://americas.api.riotgames.com/lol/match/v5/matches/${matchId}`,
-                {
-                    headers: {
-                        'X-Riot-Token': this.apiKey
-                    }
+            const response = await this.rateLimiter.queueRequest({
+                method: 'GET',
+                url: `https://americas.api.riotgames.com/lol/match/v5/matches/${matchId}`,
+                headers: {
+                    'X-Riot-Token': this.apiKey
                 }
+            }, {
+                priority: 'normal',
+                cacheKey: `match-details:${matchId}`,
+                cacheTTL: 3600000 // Cache match details for 1 hour (they don't change)
+            }
             );
             
             return response.data;
@@ -273,6 +329,7 @@ class RiotAPI {
             console.log('🔄 Loading champion data from Data Dragon...');
             
             // Get latest game version first
+            // Use direct axios calls for Data Dragon (free API, no rate limiting needed)
             const versionsResponse = await axios.get('https://ddragon.leagueoflegends.com/api/versions.json');
             const latestVersion = versionsResponse.data[0];
             
