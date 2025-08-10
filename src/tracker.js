@@ -939,7 +939,7 @@ class PlayerTracker {
 
     scheduleNextCheck() {
         if (this.cronJob) {
-            this.cronJob.destroy();
+            this.cronJob.stop();
         }
 
         // Use different intervals based on session state
@@ -958,7 +958,7 @@ class PlayerTracker {
 
     stopTracking() {
         if (this.cronJob) {
-            this.cronJob.destroy();
+            this.cronJob.stop();
             this.cronJob = null;
         }
         console.log('Player tracking stopped');
