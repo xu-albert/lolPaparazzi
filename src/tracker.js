@@ -723,7 +723,8 @@ class PlayerTracker {
             }
 
             const summoner = await this.riotApi.getSummonerByName(this.playerSession.originalInput);
-            const currentGame = await this.riotApi.getCurrentGame(summoner.puuid);
+            // Bypass cache for user-initiated info commands to get fresh data
+            const currentGame = await this.riotApi.getCurrentGame(summoner.puuid, true);
             const isInRankedGame = currentGame && this.riotApi.isRankedSoloGame(currentGame);
             
             // Calculate accurate completed games count
