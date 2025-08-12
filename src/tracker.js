@@ -936,11 +936,11 @@ class PlayerTracker {
                 if (savedData.id) {
                     console.log(`🔍 Loading session games and stats from database (ID: ${savedData.id})...`);
                     
-                    // Load session games
-                    const sessionGames = await this.persistence.loadSessionGames(savedData.id);
+                    // Load session games, filtering by current session start time to prevent counting previous session games
+                    const sessionGames = await this.persistence.loadSessionGames(savedData.id, this.playerSession.sessionStartTime);
                     if (sessionGames && sessionGames.length > 0) {
                         this.playerSession.sessionGames = sessionGames;
-                        console.log(`📥 Restored ${sessionGames.length} session games from database`);
+                        console.log(`📥 Restored ${sessionGames.length} session games from database (current session only)`);
                     }
                     
                     // Load session statistics

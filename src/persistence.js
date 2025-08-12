@@ -555,17 +555,27 @@ class PersistenceManager {
     }
 
     // Load session games from database
-    async loadSessionGames(playerSessionId) {
+    async loadSessionGames(playerSessionId, sessionStartTime = null) {
         if (!this.databaseAvailable) {
             return [];
         }
         
         try {
-            const result = await this.pool.query(`
+            let query = `
                 SELECT * FROM session_games 
-                WHERE player_session_id = $1 
-                ORDER BY game_start_time ASC
-            `, [playerSessionId]);
+                WHERE player_session_id = $1
+            `;
+            let params = [playerSessionId];
+            
+            // Filter by session start time if provided (prevents loading games from previous sessions)
+            if (sessionStartTime) {
+                query += ` AND game_start_time >= $2`;
+                params.push(sessionStartTime);
+            }
+            
+            query += ` ORDER BY game_start_time ASC`;
+            
+            const result = await this.pool.query(query, params);
             
             const games = result.rows.map(row => ({
                 champion: row.champion,
@@ -580,7 +590,11 @@ class PersistenceManager {
                 gameEndTime: row.game_end_time
             }));
             
-            console.log(`📥 Loaded ${games.length} session games from database`);
+            if (sessionStartTime) {
+                console.log(`📥 Loaded ${games.length} session games from database (filtered by session start: ${sessionStartTime.toISOString()})`);
+            } else {
+                console.log(`📥 Loaded ${games.length} session games from database (no filtering)`);
+            }
             return games;
             
         } catch (error) {
