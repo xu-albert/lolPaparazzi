@@ -164,6 +164,8 @@ class PlayerTracker {
         // Reset LP and session tracking
         this.playerSession.sessionStartLP = null;
         this.playerSession.currentLP = null;
+        this.playerSession.currentTier = null;
+        this.playerSession.currentRank = null;
         this.playerSession.sessionGames = [];
         // Reset refined session timing
         this.playerSession.firstGameStartTime = null;
@@ -184,12 +186,18 @@ class PlayerTracker {
             const rankInfo = await this.riotApi.getRankInfo(summoner.puuid);
             const formattedRank = this.riotApi.formatRankInfo(rankInfo);
             
-            // Capture starting LP for session tracking
+            // Capture starting LP and rank for session tracking
             const soloRank = rankInfo.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
             if (soloRank) {
                 this.playerSession.sessionStartLP = soloRank.leaguePoints;
                 this.playerSession.currentLP = soloRank.leaguePoints;
-                console.log(`📊 Session starting LP: ${soloRank.leaguePoints}`);
+                this.playerSession.currentTier = soloRank.tier;
+                this.playerSession.currentRank = soloRank.rank; // null for Master+
+                
+                // Display rank properly for apex tiers
+                const apexTiers = ['MASTER', 'GRANDMASTER', 'CHALLENGER'];
+                const displayRank = apexTiers.includes(soloRank.tier) ? soloRank.tier : `${soloRank.tier} ${soloRank.rank}`;
+                console.log(`📊 Session starting: ${soloRank.leaguePoints} LP (${displayRank})`);
             }
             
             const embed = {
@@ -532,19 +540,70 @@ class PlayerTracker {
             }
             
             const newLP = soloRank.leaguePoints;
-            const lpChange = newLP - this.playerSession.currentLP;
+            const newTier = soloRank.tier;
+            const newRank = soloRank.rank;
             
-            // Update current LP
+            // Get previous rank info for comparison
+            const previousLP = this.playerSession.currentLP;
+            const previousTier = this.playerSession.currentTier || newTier;
+            const previousRank = this.playerSession.currentRank || newRank;
+            
+            let lpChange = 0;
+            
+            // Define apex tiers (no divisions)
+            const apexTiers = ['MASTER', 'GRANDMASTER', 'CHALLENGER'];
+            const isApexTier = apexTiers.includes(newTier) || apexTiers.includes(previousTier);
+            
+            // Check if rank/tier changed (promotion/demotion)
+            let rankChanged = false;
+            
+            if (isApexTier) {
+                // For apex tiers, only tier changes matter (no divisions)
+                rankChanged = (previousTier !== newTier);
+            } else {
+                // For regular tiers, check both tier and division changes
+                rankChanged = (previousTier !== newTier) || (previousRank !== newRank);
+            }
+            
+            if (rankChanged) {
+                const prevDisplay = isApexTier || !previousRank ? previousTier : `${previousTier} ${previousRank}`;
+                const newDisplay = isApexTier || !newRank ? newTier : `${newTier} ${newRank}`;
+                console.log(`🔄 Rank change detected: ${prevDisplay} → ${newDisplay}`);
+                
+                // For rank changes, we can't accurately calculate LP difference due to LP resets
+                // Instead, we'll estimate based on win/loss and typical LP gains
+                if (playerStats.win) {
+                    // Win with promotion - estimate typical LP gain (15-25)
+                    lpChange = Math.floor(Math.random() * 11) + 15; // 15-25 LP
+                    console.log(`🎉 Promotion win detected, estimated +${lpChange} LP`);
+                } else {
+                    // Loss with demotion - estimate typical LP loss (15-25)
+                    lpChange = -(Math.floor(Math.random() * 11) + 15); // -15 to -25 LP
+                    console.log(`📉 Demotion loss detected, estimated ${lpChange} LP`);
+                }
+            } else {
+                // Normal LP calculation when no rank change
+                lpChange = newLP - previousLP;
+            }
+            
+            // Update current LP and rank tracking
             this.playerSession.currentLP = newLP;
+            this.playerSession.currentTier = newTier;
+            this.playerSession.currentRank = newRank;
             
-            console.log(`💰 LP Change: ${lpChange > 0 ? '+' : ''}${lpChange} (${this.playerSession.currentLP} LP total)`);
+            // Display rank properly for apex tiers in logging
+            const displayRank = apexTiers.includes(newTier) ? newTier : `${newTier} ${newRank}`;
+            console.log(`💰 LP Change: ${lpChange > 0 ? '+' : ''}${lpChange} (${newLP} LP total, ${displayRank})`);
             
             return {
                 change: lpChange,
-                previous: this.playerSession.currentLP - lpChange,
-                current: this.playerSession.currentLP,
-                tier: soloRank.tier,
-                rank: soloRank.rank
+                previous: previousLP,
+                current: newLP,
+                tier: newTier,
+                rank: newRank,
+                rankChanged: rankChanged,
+                previousTier: previousTier,
+                previousRank: previousRank
             };
         } catch (error) {
             console.error('Error calculating LP change:', error);
@@ -870,6 +929,8 @@ class PlayerTracker {
                 this.playerSession.lastGameEndTime = savedData.lastGameEndTime;
                 this.playerSession.sessionStartLP = savedData.sessionStartLP;
                 this.playerSession.currentLP = savedData.currentLP;
+                this.playerSession.currentTier = savedData.currentTier;
+                this.playerSession.currentRank = savedData.currentRank;
                 
                 // Load detailed session data from database if available
                 if (savedData.id) {
