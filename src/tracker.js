@@ -99,6 +99,16 @@ class PlayerTracker {
                     this.playerSession.sessionStartTime = now;
                     this.playerSession.gameCount = 1;
                     this.playerSession.currentGameId = gameId;
+                    // Reset session data to ensure clean start
+                    this.playerSession.sessionGames = [];
+                    this.playerSession.sessionStats = {
+                        wins: 0,
+                        losses: 0,
+                        lpGained: 0,
+                        champions: {},
+                        bestGame: null,
+                        worstGame: null
+                    };
                     await this.sendSessionStartNotification(summoner, currentGame);
                     console.log(`Session started for ${summoner.gameName}#${summoner.tagLine}`);
                     // Save session state to database and capture session ID
@@ -178,6 +188,9 @@ class PlayerTracker {
             bestGame: null,
             worstGame: null
         };
+        // IMPORTANT: Reset session ID to ensure new sessions get new IDs
+        // This prevents loading games from previous sessions
+        this.playerSession.id = null;
     }
 
     async sendSessionStartNotification(summoner, gameData) {
@@ -933,7 +946,10 @@ class PlayerTracker {
                 this.playerSession.currentRank = savedData.currentRank;
                 
                 // Load detailed session data from database if available
-                if (savedData.id) {
+                // ONLY load games if we're in an active session (prevents loading old games after session end)
+                if (savedData.id && this.playerSession.inSession && this.playerSession.sessionStartTime) {
+                    // Store the session ID for this active session
+                    this.playerSession.id = savedData.id;
                     console.log(`🔍 Loading session games and stats from database (ID: ${savedData.id})...`);
                     
                     // Load session games, filtering by current session start time to prevent counting previous session games
@@ -941,6 +957,10 @@ class PlayerTracker {
                     if (sessionGames && sessionGames.length > 0) {
                         this.playerSession.sessionGames = sessionGames;
                         console.log(`📥 Restored ${sessionGames.length} session games from database (current session only)`);
+                    } else {
+                        // Initialize empty array if no games found
+                        this.playerSession.sessionGames = [];
+                        console.log(`📥 No session games to restore (session started at ${this.playerSession.sessionStartTime})`);
                     }
                     
                     // Load session statistics
@@ -949,6 +969,10 @@ class PlayerTracker {
                         this.playerSession.sessionStats = sessionStats;
                         console.log(`📊 Restored session stats: ${sessionStats.wins}W-${sessionStats.losses}L`);
                     }
+                } else if (!this.playerSession.inSession) {
+                    // Not in active session - ensure arrays are initialized but empty
+                    this.playerSession.sessionGames = [];
+                    console.log(`ℹ️ Not in active session - skipping game restoration`);
                 }
                 
                 console.log(`🔄 Restored tracking: ${savedData.summonerName} in channel ${savedData.channelId}`);
