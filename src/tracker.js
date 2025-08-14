@@ -279,16 +279,17 @@ class PlayerTracker {
             const totalGames = stats.wins + stats.losses;
             const winrate = totalGames > 0 ? Math.round((stats.wins / totalGames) * 100) : 0;
             
-            // Calculate LP change - only show positive gains to encourage climbing
+            // Calculate LP change - show both gains and losses accurately
             let lpSummary = '';
             if (this.playerSession.sessionStartLP !== null && this.playerSession.currentLP !== null) {
                 const totalLPChange = this.playerSession.currentLP - this.playerSession.sessionStartLP;
                 
-                // Only display LP gains, hide losses to maintain positive feedback
                 if (totalLPChange > 0) {
                     lpSummary = `📈 +${totalLPChange} LP gained`;
+                } else if (totalLPChange < 0) {
+                    lpSummary = `📉 ${totalLPChange} LP lost`;
                 }
-                // For losses or neutral, don't show LP change - keep it positive!
+                // For neutral (0 LP change), don't show LP summary
             }
             
             // Build champion summary
@@ -547,7 +548,7 @@ class PlayerTracker {
             const currentRankInfo = await this.riotApi.getRankInfo(summonerData.puuid);
             const soloRank = currentRankInfo.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
             
-            if (!soloRank || this.playerSession.currentLP === null) {
+            if (!soloRank || this.playerSession.currentLP === null || this.playerSession.currentTier === null) {
                 console.log('Unable to calculate LP change - missing rank data');
                 return null;
             }
@@ -558,24 +559,27 @@ class PlayerTracker {
             
             // Get previous rank info for comparison
             const previousLP = this.playerSession.currentLP;
-            const previousTier = this.playerSession.currentTier || newTier;
-            const previousRank = this.playerSession.currentRank || newRank;
+            const previousTier = this.playerSession.currentTier;
+            const previousRank = this.playerSession.currentRank;
             
             let lpChange = 0;
             
             // Define apex tiers (no divisions)
             const apexTiers = ['MASTER', 'GRANDMASTER', 'CHALLENGER'];
-            const isApexTier = apexTiers.includes(newTier) || apexTiers.includes(previousTier);
+            const isApexTier = apexTiers.includes(newTier) || (previousTier && apexTiers.includes(previousTier));
             
             // Check if rank/tier changed (promotion/demotion)
             let rankChanged = false;
             
-            if (isApexTier) {
-                // For apex tiers, only tier changes matter (no divisions)
-                rankChanged = (previousTier !== newTier);
-            } else {
-                // For regular tiers, check both tier and division changes
-                rankChanged = (previousTier !== newTier) || (previousRank !== newRank);
+            // Only check for rank changes if we have previous rank data
+            if (previousTier && (previousRank !== undefined)) {
+                if (isApexTier) {
+                    // For apex tiers, only tier changes matter (no divisions)
+                    rankChanged = (previousTier !== newTier);
+                } else {
+                    // For regular tiers, check both tier and division changes
+                    rankChanged = (previousTier !== newTier) || (previousRank !== newRank);
+                }
             }
             
             if (rankChanged) {
