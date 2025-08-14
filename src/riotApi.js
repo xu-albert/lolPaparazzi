@@ -208,6 +208,23 @@ class RiotAPI {
         return gameData && gameData.gameQueueConfigId === 420;
     }
 
+    isCasualGame(gameData) {
+        if (!gameData || !gameData.gameQueueConfigId) return false;
+        
+        // Common casual game modes that players play during breaks from ranked
+        const casualQueues = [
+            450,  // ARAM (All Random All Mid)
+            400,  // Normal Draft Pick
+            430,  // Normal Blind Pick 
+            490,  // Quickplay
+            900,  // ARURF (All Random Ultra Rapid Fire)
+            1900, // Pick URF
+            1300, // Nexus Blitz
+            1400  // Ultimate Spellbook
+        ];
+        
+        return casualQueues.includes(gameData.gameQueueConfigId);
+    }
 
     formatRankInfo(rankData) {
         const soloRank = rankData.find(entry => entry.queueType === 'RANKED_SOLO_5x5');

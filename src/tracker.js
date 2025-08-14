@@ -99,6 +99,7 @@ class PlayerTracker {
                     this.playerSession.sessionStartTime = now;
                     this.playerSession.gameCount = 1;
                     this.playerSession.currentGameId = gameId;
+                    this.playerSession.nonRankedGames = 0;
                     // Reset session data to ensure clean start
                     this.playerSession.sessionGames = [];
                     this.playerSession.sessionStats = {
@@ -130,6 +131,23 @@ class PlayerTracker {
                     }
                 }
                 // If same game, don't increment counter
+            } else if (currentGame && this.riotApi.isCasualGame(currentGame) && this.playerSession.inSession) {
+                // Player is in a casual game during an active ranked session
+                this.playerSession.lastGameCheck = now;
+                
+                // Check if this is a new casual game (different game ID)
+                const gameId = currentGame.gameId;
+                const isNewGame = gameId !== this.playerSession.currentGameId;
+                
+                if (isNewGame) {
+                    // Track this casual game
+                    this.playerSession.nonRankedGames = (this.playerSession.nonRankedGames || 0) + 1;
+                    this.playerSession.currentGameId = gameId;
+                    console.log(`New casual game detected for ${summoner.gameName}#${summoner.tagLine} (${this.playerSession.nonRankedGames} casual games this session)`);
+                    
+                    // Save updated session state
+                    await this.persistence.saveTrackingData(this.playerSession);
+                }
             } else {
                 // Player not in ranked game - check if a game just ended
                 if (this.playerSession.inSession && this.playerSession.currentGameId) {
@@ -167,6 +185,7 @@ class PlayerTracker {
         this.playerSession.inSession = false;
         this.playerSession.sessionStartTime = null;
         this.playerSession.gameCount = 0;
+        this.playerSession.nonRankedGames = 0;
         this.playerSession.lastGameCheck = null;
         this.playerSession.currentGameId = null;
         this.playerSession.lastCompletedGameId = null;
@@ -277,6 +296,7 @@ class PlayerTracker {
             
             const stats = this.playerSession.sessionStats;
             const totalGames = stats.wins + stats.losses;
+            const casualGames = this.playerSession.nonRankedGames || 0;
             const winrate = totalGames > 0 ? Math.round((stats.wins / totalGames) * 100) : 0;
             
             // Calculate LP change - show both gains and losses accurately
@@ -309,10 +329,22 @@ class PlayerTracker {
                 // Removed LP display from highlights - keep focus on gameplay achievements
             }
             
+            // Build game summary description
+            let gamesSummary = '';
+            if (totalGames > 0 && casualGames > 0) {
+                gamesSummary = `${totalGames} ranked games, ${casualGames} casual games played`;
+            } else if (totalGames > 0 && casualGames === 0) {
+                gamesSummary = `${totalGames} ranked games played`;
+            } else if (totalGames === 0 && casualGames > 0) {
+                gamesSummary = `${casualGames} casual games played`;
+            } else {
+                gamesSummary = 'No games played';
+            }
+
             const embed = {
                 color: 0x5865f2, // Discord blue for all session summaries
                 title: '📊 Session Complete',
-                description: `**${summoner.gameName}#${summoner.tagLine}** • ${durationText} • ${totalGames} Games Played`,
+                description: `**${summoner.gameName}#${summoner.tagLine}** • ${durationText} • ${gamesSummary}`,
                 fields: [
                     {
                         name: '🏆 PERFORMANCE',
@@ -936,6 +968,7 @@ class PlayerTracker {
                 this.playerSession.inSession = savedData.inSession || false;
                 this.playerSession.sessionStartTime = savedData.sessionStartTime;
                 this.playerSession.gameCount = savedData.gameCount || 0;
+                this.playerSession.nonRankedGames = savedData.nonRankedGames || 0;
                 this.playerSession.currentGameId = savedData.currentGameId;
                 this.playerSession.lastGameCheck = savedData.lastGameCheck;
                 this.playerSession.lastCompletedGameId = savedData.lastCompletedGameId;

@@ -55,7 +55,8 @@ class PersistenceManager {
                     ADD COLUMN IF NOT EXISTS first_game_start_time TIMESTAMP WITH TIME ZONE,
                     ADD COLUMN IF NOT EXISTS last_game_end_time TIMESTAMP WITH TIME ZONE,
                     ADD COLUMN IF NOT EXISTS session_start_lp INTEGER,
-                    ADD COLUMN IF NOT EXISTS current_lp INTEGER
+                    ADD COLUMN IF NOT EXISTS current_lp INTEGER,
+                    ADD COLUMN IF NOT EXISTS non_ranked_games INTEGER DEFAULT 0
                 `);
                 console.log('✅ Database columns migrated');
             } catch (migrationError) {
@@ -87,6 +88,18 @@ class PersistenceManager {
                 )
             `);
             console.log('✅ Session games table initialized');
+
+            // Add new columns to session_games table if they don't exist
+            try {
+                await this.pool.query(`
+                    ALTER TABLE session_games 
+                    ADD COLUMN IF NOT EXISTS queue_id INTEGER,
+                    ADD COLUMN IF NOT EXISTS is_ranked BOOLEAN DEFAULT true
+                `);
+                console.log('✅ Session games table columns migrated');
+            } catch (migrationError) {
+                console.log('ℹ️ Session games column migration skipped (likely already exist):', migrationError.message);
+            }
 
             // Create session stats table for aggregated statistics
             await this.pool.query(`
@@ -149,7 +162,7 @@ class PersistenceManager {
                         in_session = $2, session_start_time = $3, game_count = $4, 
                         current_game_id = $5, last_game_check = $6, last_completed_game_id = $7,
                         first_game_start_time = $8, last_game_end_time = $9,
-                        session_start_lp = $10, current_lp = $11, updated_at = CURRENT_TIMESTAMP
+                        session_start_lp = $10, current_lp = $11, non_ranked_games = $12, updated_at = CURRENT_TIMESTAMP
                     WHERE id = $1
                     RETURNING id
                 `;
@@ -165,7 +178,8 @@ class PersistenceManager {
                     playerSession.firstGameStartTime,
                     playerSession.lastGameEndTime,
                     playerSession.sessionStartLP,
-                    playerSession.currentLP
+                    playerSession.currentLP,
+                    playerSession.nonRankedGames || 0
                 ]);
                 
                 if (result.rows.length === 0) {
@@ -200,7 +214,7 @@ class PersistenceManager {
                                 game_count = $5, current_game_id = $6, last_game_check = $7, 
                                 last_completed_game_id = $8, first_game_start_time = $9, 
                                 last_game_end_time = $10, session_start_lp = $11, current_lp = $12,
-                                updated_at = CURRENT_TIMESTAMP
+                                non_ranked_games = $13, updated_at = CURRENT_TIMESTAMP
                             WHERE id = $1
                             RETURNING id
                         `;
@@ -217,7 +231,8 @@ class PersistenceManager {
                             playerSession.firstGameStartTime,
                             playerSession.lastGameEndTime,
                             playerSession.sessionStartLP,
-                            playerSession.currentLP
+                            playerSession.currentLP,
+                            playerSession.nonRankedGames || 0
                         ]);
                         
                         await this.pool.query('COMMIT');
@@ -236,9 +251,9 @@ class PersistenceManager {
                             session_start_time, game_count, current_game_id, 
                             last_game_check, last_completed_game_id,
                             first_game_start_time, last_game_end_time, 
-                            session_start_lp, current_lp, updated_at
+                            session_start_lp, current_lp, non_ranked_games, updated_at
                         )
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
                         RETURNING id
                     `;
                     
@@ -255,7 +270,8 @@ class PersistenceManager {
                         playerSession.firstGameStartTime,
                         playerSession.lastGameEndTime,
                         playerSession.sessionStartLP,
-                        playerSession.currentLP
+                        playerSession.currentLP,
+                        playerSession.nonRankedGames || 0
                     ]);
                     
                     await this.pool.query('COMMIT');
@@ -303,6 +319,7 @@ class PersistenceManager {
                     lastGameEndTime: row.last_game_end_time ? new Date(row.last_game_end_time) : null,
                     sessionStartLP: row.session_start_lp,
                     currentLP: row.current_lp,
+                    nonRankedGames: row.non_ranked_games || 0,
                     lastSaved: row.updated_at
                 };
             }
