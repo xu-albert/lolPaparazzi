@@ -2,6 +2,7 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('
 
 class BettingManager {
     constructor(persistence, riotApi) {
+        console.log(`🎰 BettingManager instance created`);
         this.persistence = persistence;
         this.riotApi = riotApi;
         this.activeBettingPanels = new Map(); // gameId -> panel info
@@ -371,7 +372,10 @@ class BettingManager {
 
     async closeBettingWindow(gameId) {
         const panelInfo = this.activeBettingPanels.get(gameId);
-        if (!panelInfo) return;
+        if (!panelInfo) {
+            console.log(`⚠️ closeBettingWindow called but no panel info for game ${gameId}`);
+            return;
+        }
 
         console.log(`🚫 Closing betting window for game ${gameId}`);
         
@@ -383,13 +387,15 @@ class BettingManager {
         }
 
         // Remove from active panels
+        console.log(`🗑️ Deleting betting panel info for game ${gameId}`);
         this.activeBettingPanels.delete(gameId);
     }
 
     getBettingTimeRemaining(gameId) {
+        console.log(`🔍 Checking betting time for game ${gameId}. Active panels: ${this.activeBettingPanels.size} total`);
         const panelInfo = this.activeBettingPanels.get(gameId);
         if (!panelInfo) {
-            console.log(`⚠️ No betting panel info found for game ${gameId}`);
+            console.log(`⚠️ No betting panel info found for game ${gameId}. Active panels: [${Array.from(this.activeBettingPanels.keys()).join(', ')}]`);
             return 0;
         }
 
