@@ -143,9 +143,9 @@ async function handlePredictionPlacement(interaction, gameId, outcome) {
         });
     }
     
-    // Get tracked player info for this game
-    const playerSession = tracker.playerSession;
-    if (!playerSession.currentGameId || playerSession.currentGameId !== gameId) {
+    // Get tracked player info for this channel and game
+    const playerSession = tracker.getSessionForChannel(channelId);
+    if (!playerSession || !playerSession.currentGameId || playerSession.currentGameId !== gameId) {
         return await interaction.reply({
             content: '❌ This game is no longer active!',
             ephemeral: true
@@ -181,9 +181,9 @@ async function handleAccuracyDisplay(interaction, gameId) {
     const channelId = interaction.channel.id;
     
     try {
-        // Get tracked player info for this game
-        const playerSession = tracker.playerSession;
-        if (!playerSession.currentGameId || playerSession.currentGameId !== gameId) {
+        // Get tracked player info for this channel and game
+        const playerSession = tracker.getSessionForChannel(channelId);
+        if (!playerSession || !playerSession.currentGameId || playerSession.currentGameId !== gameId) {
             return await interaction.reply({
                 content: '❌ This game is no longer active!',
                 ephemeral: true
@@ -215,9 +215,9 @@ async function handleLeaderboardDisplay(interaction, gameId) {
     const channelId = interaction.channel.id;
     
     try {
-        // Get tracked player info for this game
-        const playerSession = tracker.playerSession;
-        if (!playerSession.currentGameId || playerSession.currentGameId !== gameId) {
+        // Get tracked player info for this channel and game
+        const playerSession = tracker.getSessionForChannel(channelId);
+        if (!playerSession || !playerSession.currentGameId || playerSession.currentGameId !== gameId) {
             return await interaction.reply({
                 content: '❌ This game is no longer active!',
                 ephemeral: true
@@ -248,8 +248,9 @@ async function handleLeaderboardDisplay(interaction, gameId) {
 async function handleStatsDisplay(interaction, gameId) {
     try {
         // Get current game analysis if available
-        const playerSession = tracker.playerSession;
-        if (!playerSession.currentGameId || playerSession.currentGameId !== gameId) {
+        const channelId = interaction.channel.id;
+        const playerSession = tracker.getSessionForChannel(channelId);
+        if (!playerSession || !playerSession.currentGameId || playerSession.currentGameId !== gameId) {
             return await interaction.reply({
                 content: '❌ This game is no longer active!',
                 ephemeral: true

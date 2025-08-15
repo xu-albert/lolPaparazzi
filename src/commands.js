@@ -57,16 +57,16 @@ function createCommands(riotApi, tracker) {
                 .setName('stop')
                 .setDescription('Stop tracking in this channel'),
             async execute(interaction) {
-                const wasTracking = tracker.playerSession.channelId === interaction.channelId;
-                const trackedSummoner = wasTracking ? tracker.playerSession.summonerName : null;
+                const channelId = interaction.channelId;
+                const session = tracker.getSessionForChannel(channelId);
+                const wasTracking = session !== undefined;
+                const trackedSummoner = wasTracking ? session.summonerName : null;
                 
                 if (wasTracking) {
-                    tracker.resetSession();
-                    tracker.playerSession.channelId = null;
-                    tracker.playerSession.summonerName = null;
-                    tracker.playerSession.originalInput = null;
+                    // Remove only the session for this specific channel
+                    tracker.removeSession(channelId);
                     // Clear saved data for this channel only
-                    tracker.persistence.clearTrackingData(interaction.channelId);
+                    tracker.persistence.clearTrackingData(channelId);
                 }
                 
                 const embed = new EmbedBuilder()
@@ -97,17 +97,18 @@ function createCommands(riotApi, tracker) {
                     .setTimestamp()
                     .setFooter({ text: 'LoL Paparazzi' });
 
-                if (!tracker.playerSession.summonerName || tracker.playerSession.channelId !== interaction.channelId) {
+                const session = tracker.getSessionForChannel(interaction.channelId);
+                if (!session) {
                     embed.setDescription('No player is currently being tracked in this channel.\n\nUse `/setup <summoner>` to start tracking!');
                 } else {
                     // Get real-time session metrics with rate limiting
                     const metrics = await tracker.getRealTimeSessionMetrics(interaction.user.id);
                     
                     if (metrics.error) {
-                        embed.setDescription(`Tracking **${tracker.playerSession.summonerName}**\n\n⚠️ ${metrics.error}`)
+                        embed.setDescription(`Tracking **${session.summonerName}**\n\n⚠️ ${metrics.error}`)
                             .setColor(0xff9900);
                     } else {
-                        embed.setDescription(`Tracking **${tracker.playerSession.summonerName}**`);
+                        embed.setDescription(`Tracking **${session.summonerName}**`);
                         
                         // Add champion thumbnail if player is in game
                         if (metrics.isInGame && metrics.currentChampion) {
@@ -126,7 +127,7 @@ function createCommands(riotApi, tracker) {
                         ];
                         
                         // Show game counts if in session
-                        if (tracker.playerSession.inSession) {
+                        if (session.inSession) {
                             fields.push({
                                 name: 'Session Games',
                                 value: `${metrics.completedGames} completed${metrics.isInGame ? ' + 1 current' : ''}`,
@@ -159,60 +160,6 @@ function createCommands(riotApi, tracker) {
                 }
 
                 await interaction.reply({ embeds: [embed] });
-            }
-        },
-        {
-            data: new SlashCommandBuilder()
-                .setName('status')
-                .setDescription('Check current status of a League of Legends player')
-                .addStringOption(option =>
-                    option.setName('summoner')
-                        .setDescription('The summoner name to check')
-                        .setRequired(true)),
-            async execute(interaction) {
-                const summonerName = interaction.options.getString('summoner');
-                
-                try {
-                    const summoner = await riotApi.getSummonerByName(summonerName);
-                    const currentGame = await riotApi.getCurrentGame(summoner.puuid);
-                    const rankInfo = await riotApi.getRankInfo(summoner.puuid);
-                    const formattedRank = riotApi.formatRankInfo(rankInfo);
-                    
-                    const embed = new EmbedBuilder()
-                        .setColor(0x0099ff)
-                        .setTitle(`📊 ${summoner.gameName}#${summoner.tagLine}'s Status`)
-                        .addFields(
-                            { name: 'Rank', value: formattedRank, inline: true },
-                            { name: 'Level', value: summoner.summonerLevel.toString(), inline: true }
-                        )
-                        .setTimestamp()
-                        .setFooter({ text: 'LoL Paparazzi' });
-
-                    if (currentGame) {
-                        if (riotApi.isRankedSoloGame(currentGame)) {
-                            embed.addFields({ name: 'Status', value: '🎮 Playing Ranked Solo Queue', inline: false });
-                            embed.setColor(0x00ff00);
-                        } else {
-                            embed.addFields({ name: 'Status', value: '🎮 Playing Other Game Mode', inline: false });
-                            embed.setColor(0xff9900);
-                        }
-                    } else {
-                        embed.addFields({ name: 'Status', value: '⏸️ Not Currently Playing', inline: false });
-                    }
-
-                    await interaction.reply({ embeds: [embed] });
-                } catch (error) {
-                    console.error('Error in status command:', error);
-                    
-                    const embed = new EmbedBuilder()
-                        .setColor(0xff0000)
-                        .setTitle('❌ Error')
-                        .setDescription(`Could not find summoner "${summonerName}". Please check the spelling and try again.`)
-                        .setTimestamp()
-                        .setFooter({ text: 'LoL Paparazzi' });
-
-                    await interaction.reply({ embeds: [embed] });
-                }
             }
         },
         {

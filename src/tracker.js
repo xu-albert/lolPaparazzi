@@ -6,32 +6,10 @@ class PlayerTracker {
         this.riotApi = riotApi;
         this.discordClient = discordClient;
         this.persistence = new PersistenceManager();
-        this.playerSession = {
-            summonerName: null,
-            channelId: null,
-            inSession: false,
-            lastGameCheck: null,
-            sessionStartTime: null,
-            gameCount: 0,
-            currentGameId: null,
-            lastCompletedGameId: null,
-            pendingMatchAnalysis: [],
-            // LP and session tracking
-            sessionStartLP: null,
-            currentLP: null,
-            sessionGames: [], // Array of game results with LP changes
-            // Refined session timing - based on actual gameplay not detection
-            firstGameStartTime: null, // When first match actually began
-            lastGameEndTime: null,   // When last match actually ended
-            sessionStats: {
-                wins: 0,
-                losses: 0,
-                lpGained: 0,
-                champions: {},
-                bestGame: null,
-                worstGame: null
-            }
-        };
+        // Multiple channel support - Map of channelId -> sessionData
+        this.playerSessions = new Map();
+        // For backward compatibility, maintain a reference to the most recent active session
+        this.playerSession = null;
         this.cronJob = null;
         // Session ends after 15 minutes of no ranked games
         this.sessionTimeoutMinutes = 15;
@@ -49,75 +27,143 @@ class PlayerTracker {
     }
 
     async setPlayer(channelId, summonerName, originalInput = null) {
-        this.playerSession.channelId = channelId;
-        this.playerSession.summonerName = summonerName;
-        this.playerSession.originalInput = originalInput || summonerName;
+        // Create or update session for this specific channel
+        const sessionData = {
+            summonerName,
+            channelId,
+            originalInput: originalInput || summonerName,
+            inSession: false,
+            lastGameCheck: null,
+            sessionStartTime: null,
+            gameCount: 0,
+            currentGameId: null,
+            lastCompletedGameId: null,
+            pendingMatchAnalysis: [],
+            // LP and session tracking
+            sessionStartLP: null,
+            currentLP: null,
+            sessionGames: [],
+            // Refined session timing - based on actual gameplay not detection
+            firstGameStartTime: null,
+            lastGameEndTime: null,
+            sessionStats: {
+                wins: 0,
+                losses: 0,
+                lpGained: 0,
+                champions: {},
+                bestGame: null,
+                worstGame: null
+            }
+        };
+        
+        this.playerSessions.set(channelId, sessionData);
+        // For backward compatibility, set as current session
+        this.playerSession = sessionData;
         console.log(`Now tracking ${summonerName} in channel ${channelId}`);
         
         // Save tracking data and capture session ID
-        const sessionId = await this.persistence.saveTrackingData(this.playerSession);
+        const sessionId = await this.persistence.saveTrackingData(sessionData);
         if (sessionId) {
-            this.playerSession.id = sessionId;
+            sessionData.id = sessionId;
         }
     }
 
-    isSessionActive() {
-        return this.playerSession.inSession;
+    isSessionActive(channelId = null) {
+        if (channelId) {
+            const session = this.playerSessions.get(channelId);
+            return session ? session.inSession : false;
+        }
+        // For backward compatibility, check if any session is active
+        for (const session of this.playerSessions.values()) {
+            if (session.inSession) return true;
+        }
+        return false;
     }
 
-    shouldEndSession() {
-        if (!this.playerSession.inSession) return false;
+    shouldEndSession(session) {
+        if (!session || !session.inSession) return false;
         
         const now = new Date();
-        const timeSinceLastGame = (now - this.playerSession.lastGameCheck) / 1000 / 60; // minutes
+        const timeSinceLastGame = (now - session.lastGameCheck) / 1000 / 60; // minutes
         
         return timeSinceLastGame > this.sessionTimeoutMinutes;
     }
+    
+    getSessionForChannel(channelId) {
+        return this.playerSessions.get(channelId);
+    }
+    
+    removeSession(channelId) {
+        const session = this.playerSessions.get(channelId);
+        if (session) {
+            this.playerSessions.delete(channelId);
+            // If this was our current session reference, update it
+            if (this.playerSession === session) {
+                // Set to any remaining active session, or null
+                this.playerSession = this.playerSessions.size > 0 ? 
+                    this.playerSessions.values().next().value : null;
+            }
+            console.log(`Removed session for channel ${channelId}`);
+        }
+        return session;
+    }
 
     async checkPlayer() {
-        if (!this.playerSession.originalInput) return;
+        // Check all active sessions
+        if (this.playerSessions.size === 0) return;
         
         try {
             // Process pending match analysis queue
             await this.processPendingMatchAnalysis();
             
-            const summoner = await this.riotApi.getSummonerByName(this.playerSession.originalInput);
+            // Check each active session
+            for (const [channelId, session] of this.playerSessions) {
+                await this.checkSessionPlayer(channelId, session);
+            }
+        } catch (error) {
+            console.error(`Error in checkPlayer:`, error.message);
+        }
+    }
+
+    async checkSessionPlayer(channelId, session) {
+        try {
+            const summoner = await this.riotApi.getSummonerByName(session.originalInput);
             const currentGame = await this.riotApi.getCurrentGame(summoner.puuid);
             const now = new Date();
             
             // Debug logging for game detection
             if (currentGame) {
-                console.log(`🎮 Game detected: ID=${currentGame.gameId}, Queue=${currentGame.gameQueueConfigId}, GameLength=${currentGame.gameLength || 'unknown'}s`);
+                console.log(`🎮 Channel ${channelId}: Game detected: ID=${currentGame.gameId}, Queue=${currentGame.gameQueueConfigId}, GameLength=${currentGame.gameLength || 'unknown'}s`);
                 if (this.riotApi.isRankedSoloGame(currentGame)) {
-                    console.log(`✅ Ranked solo game confirmed (Queue 420)`);
+                    console.log(`✅ Channel ${channelId}: Ranked solo game confirmed (Queue 420)`);
                 } else {
-                    console.log(`❌ Not ranked solo - Queue ${currentGame.gameQueueConfigId} (need 420)`);
+                    console.log(`❌ Channel ${channelId}: Not ranked solo - Queue ${currentGame.gameQueueConfigId} (need 420)`);
                 }
             } else {
-                console.log(`❌ No active game found for ${summoner.gameName}#${summoner.tagLine}`);
+                console.log(`❌ Channel ${channelId}: No active game found for ${summoner.gameName}#${summoner.tagLine}`);
             }
             
             if (currentGame && this.riotApi.isRankedSoloGame(currentGame)) {
                 // Player is in a ranked game
-                this.playerSession.lastGameCheck = now;
+                session.lastGameCheck = now;
                 
                 // Check if this is a new game (different game ID)
                 const gameId = currentGame.gameId;
-                const isNewGame = gameId !== this.playerSession.currentGameId;
+                const isNewGame = gameId !== session.currentGameId;
                 
-                console.log(`🔍 Session state: inSession=${this.playerSession.inSession}, currentGameId=${this.playerSession.currentGameId} (${typeof this.playerSession.currentGameId}), newGameId=${gameId} (${typeof gameId}), isNewGame=${isNewGame}`);
+                console.log(`🔍 Channel ${channelId}: Session state: inSession=${session.inSession}, currentGameId=${session.currentGameId} (${typeof session.currentGameId}), newGameId=${gameId} (${typeof gameId}), isNewGame=${isNewGame}`);
                 
-                if (!this.playerSession.inSession) {
-                    console.log(`🚀 Starting new session for game ${gameId}`);
+                if (!session.inSession) {
+                    console.log(`🚀 Channel ${channelId}: Starting new session for game ${gameId}`);
                     // Start new session
-                    this.playerSession.inSession = true;
-                    this.playerSession.sessionStartTime = now;
-                    this.playerSession.gameCount = 1;
-                    this.playerSession.currentGameId = gameId;
-                    this.playerSession.nonRankedGames = 0;
+                    session.inSession = true;
+                    session.sessionStartTime = now;
+                    session.gameCount = 1;
+                    session.currentGameId = gameId;
+                    session.nonRankedGames = 0;
                     // Reset session data to ensure clean start
-                    this.playerSession.sessionGames = [];
-                    this.playerSession.sessionStats = {
+                    session.sessionGames = [];
+                    session.sessionStats = {
                         wins: 0,
                         losses: 0,
                         lpGained: 0,
@@ -125,103 +171,104 @@ class PlayerTracker {
                         bestGame: null,
                         worstGame: null
                     };
-                    await this.sendSessionStartNotification(summoner, currentGame);
-                    console.log(`Session started for ${summoner.gameName}#${summoner.tagLine}`);
+                    await this.sendSessionStartNotification(summoner, currentGame, channelId);
+                    console.log(`Session started for ${summoner.gameName}#${summoner.tagLine} in channel ${channelId}`);
                     // Save session state to database and capture session ID
-                    const sessionId = await this.persistence.saveTrackingData(this.playerSession);
+                    const sessionId = await this.persistence.saveTrackingData(session);
                     if (sessionId) {
-                        this.playerSession.id = sessionId;
+                        session.id = sessionId;
                     }
                     // Switch to longer polling interval during session
                     this.scheduleNextCheck();
                 } else if (isNewGame) {
-                    console.log(`🎮 New game detected for existing session: ${gameId}`);
+                    console.log(`🎮 Channel ${channelId}: New game detected for existing session: ${gameId}`);
                     // Already in session, but this is a new game
-                    this.playerSession.gameCount++;
-                    this.playerSession.currentGameId = gameId;
-                    console.log(`New game detected for ${summoner.gameName}#${summoner.tagLine} (Game ${this.playerSession.gameCount})`);
+                    session.gameCount++;
+                    session.currentGameId = gameId;
+                    console.log(`New game detected for ${summoner.gameName}#${summoner.tagLine} in channel ${channelId} (Game ${session.gameCount})`);
                     
                     // Create betting panel for new game in existing session
-                    await this.sendSessionStartNotification(summoner, currentGame);
+                    await this.sendSessionStartNotification(summoner, currentGame, channelId);
                     
                     // Save updated game count to database and capture session ID
-                    const sessionId = await this.persistence.saveTrackingData(this.playerSession);
-                    if (sessionId && !this.playerSession.id) {
-                        this.playerSession.id = sessionId;
+                    const sessionId = await this.persistence.saveTrackingData(session);
+                    if (sessionId && !session.id) {
+                        session.id = sessionId;
                     }
                 } else {
-                    console.log(`⏸️  Same game continues: ${gameId} (no action taken)`);
+                    console.log(`⏸️  Channel ${channelId}: Same game continues: ${gameId} (no action taken)`);
                 }
                 // If same game, don't increment counter
-            } else if (currentGame && this.riotApi.isCasualGame(currentGame) && this.playerSession.inSession) {
+            } else if (currentGame && this.riotApi.isCasualGame(currentGame) && session.inSession) {
                 // Player is in a casual game during an active ranked session
-                this.playerSession.lastGameCheck = now;
+                session.lastGameCheck = now;
                 
                 // Check if this is a new casual game (different game ID)
                 const gameId = currentGame.gameId;
-                const isNewGame = gameId !== this.playerSession.currentGameId;
+                const isNewGame = gameId !== session.currentGameId;
                 
                 if (isNewGame) {
                     // Track this casual game
-                    this.playerSession.nonRankedGames = (this.playerSession.nonRankedGames || 0) + 1;
-                    this.playerSession.currentGameId = gameId;
-                    console.log(`New casual game detected for ${summoner.gameName}#${summoner.tagLine} (${this.playerSession.nonRankedGames} casual games this session)`);
+                    session.nonRankedGames = (session.nonRankedGames || 0) + 1;
+                    session.currentGameId = gameId;
+                    console.log(`Channel ${channelId}: New casual game detected for ${summoner.gameName}#${summoner.tagLine} (${session.nonRankedGames} casual games this session)`);
                     
                     // Save updated session state
-                    await this.persistence.saveTrackingData(this.playerSession);
+                    await this.persistence.saveTrackingData(session);
                 }
             } else {
                 // Player not in ranked game - check if a game just ended
-                if (this.playerSession.inSession && this.playerSession.currentGameId) {
+                if (session.inSession && session.currentGameId) {
                     // Player was in a game but now isn't - game ended!
-                    console.log(`Game ended: ${this.playerSession.currentGameId} for ${summoner.gameName}#${summoner.tagLine}`);
+                    console.log(`Channel ${channelId}: Game ended: ${session.currentGameId} for ${summoner.gameName}#${summoner.tagLine}`);
                     
                     // Queue this game for match analysis using persistent queue
-                    this.playerSession.lastCompletedGameId = this.playerSession.currentGameId;
-                    this.playerSession.currentGameId = null;
+                    session.lastCompletedGameId = session.currentGameId;
+                    session.currentGameId = null;
                     
                     // Add to persistent queue with 30-second delay (match data may take time to appear)
-                    await this.persistence.queueMatchAnalysis(summoner, this.playerSession.lastCompletedGameId, 0.5);
+                    await this.persistence.queueMatchAnalysis(summoner, session.lastCompletedGameId, 0.5);
                     
                     // Save updated session state
-                    await this.persistence.saveTrackingData(this.playerSession);
+                    await this.persistence.saveTrackingData(session);
                 }
                 
-                if (this.playerSession.inSession && this.shouldEndSession()) {
+                if (session.inSession && this.shouldEndSession(session)) {
                     // End session due to timeout
-                    await this.sendSessionEndNotification(summoner);
-                    this.resetSession();
-                    console.log(`Session ended for ${summoner.gameName}#${summoner.tagLine} due to inactivity`);
+                    await this.sendSessionEndNotification(summoner, channelId);
+                    this.resetSessionData(session);
+                    console.log(`Session ended for ${summoner.gameName}#${summoner.tagLine} in channel ${channelId} due to inactivity`);
                     // Save cleared session state to database
-                    await this.persistence.saveTrackingData(this.playerSession);
+                    await this.persistence.saveTrackingData(session);
                     // Switch back to faster polling when not in session
                     this.scheduleNextCheck();
                 }
             }
         } catch (error) {
-            console.error(`Error checking player ${this.playerSession.summonerName}:`, error.message);
+            console.error(`Error checking player ${session.summonerName} in channel ${channelId}:`, error.message);
         }
     }
 
-    resetSession() {
-        this.playerSession.inSession = false;
-        this.playerSession.sessionStartTime = null;
-        this.playerSession.gameCount = 0;
-        this.playerSession.nonRankedGames = 0;
-        this.playerSession.lastGameCheck = null;
-        this.playerSession.currentGameId = null;
-        this.playerSession.lastCompletedGameId = null;
-        this.playerSession.pendingMatchAnalysis = [];
+    // Reset data for a specific session object
+    resetSessionData(session) {
+        session.inSession = false;
+        session.sessionStartTime = null;
+        session.gameCount = 0;
+        session.nonRankedGames = 0;
+        session.lastGameCheck = null;
+        session.currentGameId = null;
+        session.lastCompletedGameId = null;
+        session.pendingMatchAnalysis = [];
         // Reset LP and session tracking
-        this.playerSession.sessionStartLP = null;
-        this.playerSession.currentLP = null;
-        this.playerSession.currentTier = null;
-        this.playerSession.currentRank = null;
-        this.playerSession.sessionGames = [];
+        session.sessionStartLP = null;
+        session.currentLP = null;
+        session.currentTier = null;
+        session.currentRank = null;
+        session.sessionGames = [];
         // Reset refined session timing
-        this.playerSession.firstGameStartTime = null;
-        this.playerSession.lastGameEndTime = null;
-        this.playerSession.sessionStats = {
+        session.firstGameStartTime = null;
+        session.lastGameEndTime = null;
+        session.sessionStats = {
             wins: 0,
             losses: 0,
             lpGained: 0,
@@ -230,23 +277,30 @@ class PlayerTracker {
             worstGame: null
         };
         // IMPORTANT: Reset session ID to ensure new sessions get new IDs
-        // This prevents loading games from previous sessions
-        this.playerSession.id = null;
+        session.id = null;
     }
 
-    async sendSessionStartNotification(summoner, gameData) {
+    // For backward compatibility - resets the current session reference
+    resetSession() {
+        if (this.playerSession) {
+            this.resetSessionData(this.playerSession);
+        }
+    }
+
+    async sendSessionStartNotification(summoner, gameData, channelId) {
         try {
-            const channel = await this.discordClient.channels.fetch(this.playerSession.channelId);
+            const channel = await this.discordClient.channels.fetch(channelId);
+            const session = this.playerSessions.get(channelId);
             const rankInfo = await this.riotApi.getRankInfo(summoner.puuid);
             const formattedRank = this.riotApi.formatRankInfo(rankInfo);
             
             // Capture starting LP and rank for session tracking
             const soloRank = rankInfo.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
-            if (soloRank) {
-                this.playerSession.sessionStartLP = soloRank.leaguePoints;
-                this.playerSession.currentLP = soloRank.leaguePoints;
-                this.playerSession.currentTier = soloRank.tier;
-                this.playerSession.currentRank = soloRank.rank; // null for Master+
+            if (soloRank && session) {
+                session.sessionStartLP = soloRank.leaguePoints;
+                session.currentLP = soloRank.leaguePoints;
+                session.currentTier = soloRank.tier;
+                session.currentRank = soloRank.rank; // null for Master+
                 
                 // Display rank properly for apex tiers
                 const apexTiers = ['MASTER', 'GRANDMASTER', 'CHALLENGER'];
@@ -372,10 +426,11 @@ class PlayerTracker {
         }
     }
 
-    async sendSessionEndNotification(summoner) {
+    async sendSessionEndNotification(summoner, channelId) {
         try {
-            const channel = await this.discordClient.channels.fetch(this.playerSession.channelId);
-            await this.sendComprehensiveSessionSummary(summoner, channel);
+            const channel = await this.discordClient.channels.fetch(channelId);
+            const session = this.playerSessions.get(channelId);
+            await this.sendComprehensiveSessionSummary(summoner, channel, session);
         } catch (error) {
             console.error('Error sending session end notification:', error);
         }
@@ -1126,76 +1181,21 @@ class PlayerTracker {
 
     async restoreTrackingData() {
         try {
-            console.log('🔍 Attempting to restore tracking data...');
-            const savedData = await this.persistence.loadTrackingData();
-            if (savedData && savedData.channelId && savedData.summonerName) {
-                // Restore basic tracking info
-                this.playerSession.channelId = savedData.channelId;
-                this.playerSession.summonerName = savedData.summonerName;
-                this.playerSession.originalInput = savedData.originalInput;
+            console.log('🔍 Attempting to restore all tracking data...');
+            this.playerSessions = await this.persistence.loadAllTrackingData();
+            
+            if (this.playerSessions.size > 0) {
+                console.log(`📥 Restored ${this.playerSessions.size} active channel sessions`);
+                // For backward compatibility, set playerSession to the first active session
+                this.playerSession = this.playerSessions.values().next().value;
                 
-                // Restore session state
-                this.playerSession.inSession = savedData.inSession || false;
-                this.playerSession.sessionStartTime = savedData.sessionStartTime;
-                this.playerSession.gameCount = savedData.gameCount || 0;
-                this.playerSession.nonRankedGames = savedData.nonRankedGames || 0;
-                this.playerSession.currentGameId = savedData.currentGameId;
-                this.playerSession.lastGameCheck = savedData.lastGameCheck;
-                this.playerSession.lastCompletedGameId = savedData.lastCompletedGameId;
-                this.playerSession.pendingMatchAnalysis = []; // Always reset this on startup
-                
-                // Restore refined session timing and LP tracking
-                this.playerSession.firstGameStartTime = savedData.firstGameStartTime;
-                this.playerSession.lastGameEndTime = savedData.lastGameEndTime;
-                this.playerSession.sessionStartLP = savedData.sessionStartLP;
-                this.playerSession.currentLP = savedData.currentLP;
-                this.playerSession.currentTier = savedData.currentTier;
-                this.playerSession.currentRank = savedData.currentRank;
-                
-                // Load detailed session data from database if available
-                // ONLY load games if we're in an active session (prevents loading old games after session end)
-                if (savedData.id && this.playerSession.inSession && this.playerSession.sessionStartTime) {
-                    // Store the session ID for this active session
-                    this.playerSession.id = savedData.id;
-                    console.log(`🔍 Loading session games and stats from database (ID: ${savedData.id})...`);
-                    
-                    // Load session games, filtering by current session start time to prevent counting previous session games
-                    const sessionGames = await this.persistence.loadSessionGames(savedData.id, this.playerSession.sessionStartTime);
-                    if (sessionGames && sessionGames.length > 0) {
-                        this.playerSession.sessionGames = sessionGames;
-                        console.log(`📥 Restored ${sessionGames.length} session games from database (current session only)`);
-                    } else {
-                        // Initialize empty array if no games found
-                        this.playerSession.sessionGames = [];
-                        console.log(`📥 No session games to restore (session started at ${this.playerSession.sessionStartTime})`);
-                    }
-                    
-                    // Load session statistics
-                    const sessionStats = await this.persistence.loadSessionStats(savedData.id);
-                    if (sessionStats) {
-                        this.playerSession.sessionStats = sessionStats;
-                        console.log(`📊 Restored session stats: ${sessionStats.wins}W-${sessionStats.losses}L`);
-                    }
-                } else if (!this.playerSession.inSession) {
-                    // Not in active session - ensure arrays are initialized but empty
-                    this.playerSession.sessionGames = [];
-                    console.log(`ℹ️ Not in active session - skipping game restoration`);
-                }
-                
-                console.log(`🔄 Restored tracking: ${savedData.summonerName} in channel ${savedData.channelId}`);
-                
-                if (this.playerSession.inSession) {
-                    const sessionDuration = Math.floor((new Date() - this.playerSession.sessionStartTime) / 1000 / 60);
-                    console.log(`🎮 Resumed active session: ${this.playerSession.gameCount} games, ${sessionDuration} minutes`);
-                    
-                    // Check for game completion during downtime
-                    await this.checkForMissedGameCompletion();
-                    
-                    // Immediately check current game state to minimize downtime
-                    await this.checkPlayer();
+                // Log restored sessions
+                for (const [channelId, session] of this.playerSessions) {
+                    console.log(`🎮 Channel ${channelId}: Tracking ${session.summonerName} (Session: ${session.inSession ? 'active' : 'inactive'}, Games: ${session.gameCount || 0})`);
                 }
             } else {
-                console.log('ℹ️ No tracking data to restore');
+                console.log('ℹ️ No previous tracking sessions to restore');
+                this.playerSession = null;
             }
         } catch (error) {
             console.error('Error restoring tracking data:', error.message);

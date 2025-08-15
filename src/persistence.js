@@ -468,6 +468,65 @@ class PersistenceManager {
         }
     }
 
+    async loadAllTrackingData() {
+        if (!this.databaseAvailable) {
+            console.log('ℹ️ Database not available - no tracking data to restore');
+            return new Map();
+        }
+        
+        try {
+            const result = await this.pool.query(
+                'SELECT * FROM player_tracking ORDER BY updated_at DESC'
+            );
+            
+            const sessionsMap = new Map();
+            
+            if (result.rows.length > 0) {
+                console.log(`📥 Restored ${result.rows.length} channel sessions from database`);
+                
+                for (const row of result.rows) {
+                    const sessionData = {
+                        id: row.id,
+                        channelId: row.channel_id,
+                        summonerName: row.summoner_name,
+                        originalInput: row.original_input,
+                        inSession: row.in_session,
+                        sessionStartTime: row.session_start_time ? new Date(row.session_start_time) : null,
+                        gameCount: row.game_count || 0,
+                        currentGameId: row.current_game_id,
+                        lastGameCheck: row.last_game_check ? new Date(row.last_game_check) : null,
+                        lastCompletedGameId: row.last_completed_game_id,
+                        firstGameStartTime: row.first_game_start_time ? new Date(row.first_game_start_time) : null,
+                        lastGameEndTime: row.last_game_end_time ? new Date(row.last_game_end_time) : null,
+                        sessionStartLP: row.session_start_lp,
+                        currentLP: row.current_lp,
+                        nonRankedGames: row.non_ranked_games || 0,
+                        lastSaved: row.updated_at,
+                        // Initialize session stats for compatibility
+                        sessionStats: {
+                            wins: 0,
+                            losses: 0,
+                            lpGained: 0,
+                            champions: {},
+                            bestGame: null,
+                            worstGame: null
+                        }
+                    };
+                    
+                    sessionsMap.set(row.channel_id, sessionData);
+                    console.log(`🎮 Channel ${row.channel_id}: ${row.summoner_name} (Session: ${row.in_session}, Games: ${row.game_count})`);
+                }
+            } else {
+                console.log('ℹ️ No tracking data found in database');
+            }
+            
+            return sessionsMap;
+        } catch (error) {
+            console.error('❌ Error loading all tracking data:', error.message);
+            return new Map();
+        }
+    }
+
     async clearTrackingData(channelId = null) {
         if (!this.databaseAvailable) {
             console.log('ℹ️ Database not available - nothing to clear');
