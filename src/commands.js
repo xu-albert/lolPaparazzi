@@ -58,6 +58,7 @@ function createCommands(riotApi, tracker) {
                 .setDescription('Stop tracking in this channel'),
             async execute(interaction) {
                 const wasTracking = tracker.playerSession.channelId === interaction.channelId;
+                const trackedSummoner = wasTracking ? tracker.playerSession.summonerName : null;
                 
                 if (wasTracking) {
                     tracker.resetSession();
@@ -75,7 +76,7 @@ function createCommands(riotApi, tracker) {
                 if (wasTracking) {
                     embed.setColor(0xff9900)
                         .setTitle('🛑 Tracking Stopped')
-                        .setDescription('No longer tracking players in this channel.');
+                        .setDescription(`No longer tracking **${trackedSummoner}** in this channel.`);
                 } else {
                     embed.setColor(0xff0000)
                         .setTitle('❌ No Active Tracking')
