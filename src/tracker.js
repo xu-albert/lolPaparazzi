@@ -105,7 +105,7 @@ class PlayerTracker {
                 const gameId = currentGame.gameId;
                 const isNewGame = gameId !== this.playerSession.currentGameId;
                 
-                console.log(`🔍 Session state: inSession=${this.playerSession.inSession}, currentGameId=${this.playerSession.currentGameId}, newGameId=${gameId}, isNewGame=${isNewGame}`);
+                console.log(`🔍 Session state: inSession=${this.playerSession.inSession}, currentGameId=${this.playerSession.currentGameId} (${typeof this.playerSession.currentGameId}), newGameId=${gameId} (${typeof gameId}), isNewGame=${isNewGame}`);
                 
                 if (!this.playerSession.inSession) {
                     console.log(`🚀 Starting new session for game ${gameId}`);
@@ -140,6 +140,10 @@ class PlayerTracker {
                     this.playerSession.gameCount++;
                     this.playerSession.currentGameId = gameId;
                     console.log(`New game detected for ${summoner.gameName}#${summoner.tagLine} (Game ${this.playerSession.gameCount})`);
+                    
+                    // Create betting panel for new game in existing session
+                    await this.sendSessionStartNotification(summoner, currentGame);
+                    
                     // Save updated game count to database and capture session ID
                     const sessionId = await this.persistence.saveTrackingData(this.playerSession);
                     if (sessionId && !this.playerSession.id) {
