@@ -35,9 +35,13 @@ Sessions span multiple games with accurate timing based on actual gameplay, not 
 
 - **Virtual Currency**: Users start with 100💎 and receive 100💎 daily automatically
 - **Betting Options**: 30💎, 50💎, or 100💎 bets on WIN or LOSS outcomes
+- **Flexible Betting**: Users can change their bets until the 4-minute deadline expires
 - **Live Analysis**: Real-time team compositions with ranked winrates and champion-specific stats
-- **Smart Timing**: 4-minute betting window from game announcement
+- **Smart Timing**: 4-minute betting window with Discord dynamic countdown timers
 - **Fair Payouts**: 2x payout on correct predictions, lose bet amount on wrong predictions
+- **Champion Insights**: Shows "First game on Champion!" for new picks with no ranked history
+- **Deploy Resistant**: No duplicate betting panels when bot restarts during games
+- **Visual Design**: Champion portraits, team layouts, clear win/loss tracking
 
 ## Prerequisites
 
@@ -234,13 +238,21 @@ docker run -d --name lolpaparazzi \
 
 ### Basic Commands
 - `/setup <GameName#TAG>` - Set up tracking for a player in the current channel
-- `/stop` - Stop tracking in the current channel
+- `/stop` - Stop tracking in the current channel (shows which player was being tracked)
 - `/info` - Show current tracking status, session info, and live game data
 - `/status <summoner>` - Check if someone is currently playing (any summoner)
 
 ### Notification Management
 - `/join` - Get the Paparazzi role to receive session notifications
 - `/leave` - Remove the Paparazzi role to stop notifications
+
+### Betting Commands
+- **Betting Buttons**: Interact with betting panels (WIN/LOSS at 30💎, 50💎, 100💎)
+- **Balance Button**: Check your current credit balance and statistics
+- **Daily Button**: Claim your daily 100💎 credits (once per day)
+- **Stats Button**: View detailed game analysis and team compositions
+
+*Note: Betting commands are interactive buttons, not slash commands*
 
 ## Configuration
 
@@ -274,10 +286,17 @@ this.accountBaseURL = 'https://americas.api.riotgames.com/riot/account/v1'; // a
 
 The bot automatically creates these tables:
 
-**player_tracking** - Main session tracking
-**session_games** - Individual game records with full match details
-**session_stats** - Aggregated session statistics
-**pending_match_analysis** - Queue for post-game analysis
+**Core Tables:**
+- **player_tracking** - Main session tracking
+- **session_games** - Individual game records with full match details
+- **session_stats** - Aggregated session statistics
+- **pending_match_analysis** - Queue for post-game analysis
+
+**Betting Tables:**
+- **user_credits** - User balances and betting statistics
+- **active_bets** - Current bets on ongoing games
+- **betting_panels** - Tracks sent panels to prevent duplicates
+- **bet_history** - Historical betting records
 
 No manual database setup required - schema is created automatically on first run.
 
@@ -412,11 +431,22 @@ npm run format
 
 ## Roadmap
 
+### Short Term (Next Release)
+- [ ] Game duration check to prevent betting on games >5 minutes old
+- [ ] Betting statistics and leaderboards
+- [ ] User betting history viewing
+
+### Medium Term
 - [ ] Multi-player tracking support
+- [ ] Betting on multiple simultaneous games
+- [ ] Advanced betting analytics and trends
 - [ ] Web dashboard for statistics
-- [ ] Advanced analytics and trends
-- [ ] Support for other game modes
+
+### Long Term
+- [ ] Support for other game modes (ARAM, normal drafts)
 - [ ] Integration with more LoL APIs
+- [ ] Tournament bracket predictions
+- [ ] Social features and betting groups
 
 ## License
 
