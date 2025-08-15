@@ -472,19 +472,19 @@ class BettingManager {
             if (champStats.gamesPlayed === 0) {
                 // First time playing this champion in ranked
                 trackedPlayerInfo = 
-                    `🏆 **${trackedPlayer.summoner.gameName}#${trackedPlayer.summoner.tagLine}** (${trackedPlayer.championName})\n` +
+                    `🏆 **${trackedPlayer.summoner.gameName}#${trackedPlayer.summoner.tagLine}**\n` +
                     `🆕 **First game on ${trackedPlayer.championName}!** 🎯\n` +
                     `📈 **Overall Ranked:** ${rankedStats.winrate}% (${rankedStats.games}) | ${rankedStats.rank} ${rankedStats.lp} LP`;
             } else {
                 // Has played this champion before
                 trackedPlayerInfo = 
-                    `🏆 **${trackedPlayer.summoner.gameName}#${trackedPlayer.summoner.tagLine}** (${trackedPlayer.championName})\n` +
-                    `📊 Champion Stats (Last ${champStats.gamesPlayed} ${trackedPlayer.championName} games):\n` +
+                    `🏆 **${trackedPlayer.summoner.gameName}#${trackedPlayer.summoner.tagLine}**\n` +
+                    `📊 **${trackedPlayer.championName} Stats** (Last ${champStats.gamesPlayed} games):\n` +
                     `   • **Winrate:** ${champStats.winrate}% (${champStats.recentForm}) • **Avg KDA:** ${champStats.avgKDA} • **Avg CS/min:** ${champStats.avgCS}\n` +
                     `📈 **Overall Ranked:** ${rankedStats.winrate}% (${rankedStats.games}) | ${rankedStats.rank} ${rankedStats.lp} LP`;
             }
 
-            // Format team compositions with role indicators
+            // Format team compositions with role indicators and champion images
             const getRoleEmoji = (role) => {
                 const roleEmojis = {
                     'TOP': '🛡️',
@@ -496,42 +496,56 @@ class BettingManager {
                 return roleEmojis[role] || '❓';
             };
 
-            const formatPlayer = (player) => {
+            const formatPlayerCompact = (player) => {
                 const role = player.teamPosition || '';
                 const roleEmoji = getRoleEmoji(role);
                 const roleText = role ? `${roleEmoji} ` : '';
                 
                 if (player.isTracked) {
-                    return `${roleText}**${player.summonerName}** • ${player.championName} • **${player.rankedStats.winrate}%** ⭐`;
+                    return `${roleText}**${player.summonerName}** | **${player.championName}** | **${player.rankedStats.winrate}%** ⭐`;
                 } else {
-                    return `${roleText}${player.summonerName} • ${player.championName} • ${player.rankedStats.winrate}%`;
+                    return `${roleText}${player.summonerName} | ${player.championName} | ${player.rankedStats.winrate}%`;
                 }
             };
 
-            const blueTeamDisplay = teams.blue.map(formatPlayer).join('\n');
-            const redTeamDisplay = teams.red.map(formatPlayer).join('\n');
+            const blueTeamDisplay = teams.blue.map(formatPlayerCompact).join('\n');
+            const redTeamDisplay = teams.red.map(formatPlayerCompact).join('\n');
 
-            // Get champion image for tracked player
-            const championImageUrl = `https://ddragon.leagueoflegends.com/cdn/14.1.1/img/champion/${trackedPlayer.championName.replace(/[^a-zA-Z0-9]/g, '')}.png`;
+            // Get champion image for tracked player as main thumbnail
+            const trackedChampionImageUrl = `https://ddragon.leagueoflegends.com/cdn/14.1.1/img/champion/${trackedPlayer.championName.replace(/[^a-zA-Z0-9]/g, '')}.png`;
+
+            // Create team composition visual summary
+            const createTeamChampionDisplay = (team, teamName) => {
+                const championList = team.map(player => player.championName).join(' • ');
+                return `**${teamName} Champions:** ${championList}`;
+            };
+
+            const blueChampions = createTeamChampionDisplay(teams.blue, '🔵 Blue');
+            const redChampions = createTeamChampionDisplay(teams.red, '🔴 Red');
 
             const embed = new EmbedBuilder()
                 .setColor(0x00ff00)
                 .setTitle('🎯 LIVE RANKED GAME - PREDICTIONS OPEN 🎯')
                 .setDescription(`${trackedPlayer.summoner.gameName}#${trackedPlayer.summoner.tagLine} vs Enemy Team | ⏱️ Predictions close <t:${Math.floor(Date.now() / 1000) + 240}:R>`)
-                .setThumbnail(championImageUrl)
+                .setThumbnail(trackedChampionImageUrl)
                 .addFields(
                     {
-                        name: '🏆 OUR PLAYER CHAMPION STATS',
+                        name: '🏆 OUR PLAYER STATS',
                         value: trackedPlayerInfo,
                         inline: false
                     },
                     {
-                        name: '🔵 BLUE TEAM',
+                        name: '⚔️ CHAMPION MATCHUP',
+                        value: `${blueChampions}\n${redChampions}`,
+                        inline: false
+                    },
+                    {
+                        name: '🔵 BLUE TEAM ROSTER',
                         value: blueTeamDisplay,
                         inline: true
                     },
                     {
-                        name: '🔴 RED TEAM',
+                        name: '🔴 RED TEAM ROSTER',
                         value: redTeamDisplay,
                         inline: true
                     },
@@ -542,7 +556,7 @@ class BettingManager {
                     },
                     {
                         name: '🎯 MAKE YOUR PREDICTION',
-                        value: `Predict **${trackedPlayer.summoner.gameName}**'s game outcome to improve your accuracy!`,
+                        value: `Will **${trackedPlayer.summoner.gameName}** playing **${trackedPlayer.championName}** win this game?\n*Click below to predict and track your accuracy!*`,
                         inline: false
                     }
                 )
