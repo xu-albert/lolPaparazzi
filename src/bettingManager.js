@@ -352,7 +352,7 @@ class BettingManager {
 
     // Store betting panel info for later updates
     setBettingPanel(gameId, messageId, channelId, startTime) {
-        console.log(`🎰 Setting betting panel for game ${gameId} with 4-minute timer`);
+        console.log(`🎰 Setting betting panel for game ${gameId} (${typeof gameId}) with 4-minute timer`);
         
         this.activeBettingPanels.set(gameId, {
             messageId,
@@ -392,10 +392,12 @@ class BettingManager {
     }
 
     getBettingTimeRemaining(gameId) {
-        console.log(`🔍 Checking betting time for game ${gameId}. Active panels: ${this.activeBettingPanels.size} total`);
+        console.log(`🔍 Checking betting time for game ${gameId} (${typeof gameId}). Active panels: ${this.activeBettingPanels.size} total`);
         const panelInfo = this.activeBettingPanels.get(gameId);
         if (!panelInfo) {
-            console.log(`⚠️ No betting panel info found for game ${gameId}. Active panels: [${Array.from(this.activeBettingPanels.keys()).join(', ')}]`);
+            const activeKeys = Array.from(this.activeBettingPanels.keys());
+            const keyTypes = activeKeys.map(k => `${k}(${typeof k})`);
+            console.log(`⚠️ No betting panel info found for game ${gameId} (${typeof gameId}). Active panels: [${keyTypes.join(', ')}]`);
             return 0;
         }
 

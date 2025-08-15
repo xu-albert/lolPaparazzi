@@ -88,17 +88,17 @@ async function handleBettingButtons(interaction) {
         if (action === 'bet') {
             const outcome = parts[1]; // 'win' or 'loss'
             const amount = parseInt(parts[2]); // 30, 50, or 100
-            const gameId = parts[3];
+            const gameId = parseInt(parts[3]); // Convert to number to match Riot API
             
             await handleBetPlacement(interaction, gameId, outcome, amount);
         } else if (action === 'balance') {
-            const gameId = parts[1];
+            const gameId = parseInt(parts[1]);
             await handleBalanceCheck(interaction);
         } else if (action === 'daily') {
-            const gameId = parts[1];
+            const gameId = parseInt(parts[1]);
             await handleDailyCredits(interaction);
         } else if (action === 'stats') {
-            const gameId = parts[1];
+            const gameId = parseInt(parts[1]);
             await handleStatsDisplay(interaction, gameId);
         }
     } catch (error) {
