@@ -9,78 +9,97 @@ class BettingManager {
         this.bettingTimeouts = new Map(); // gameId -> timeout
     }
 
-    // User credit management
-    async getUserCredits(userId, guildId) {
+    // User prediction accuracy management
+    async getUserPredictionStats(userId, guildId, channelId, trackedPlayerPuuid, trackedPlayerName) {
         if (!this.persistence.databaseAvailable) {
-            return { balance: 100, canClaimDaily: false };
+            return { 
+                totalPredictions: 0, 
+                correctPredictions: 0, 
+                accuracy: 0, 
+                currentStreak: 0, 
+                bestStreak: 0 
+            };
         }
 
         try {
             const result = await this.persistence.pool.query(`
-                SELECT * FROM user_credits WHERE user_id = $1 AND guild_id = $2
-            `, [userId, guildId]);
+                SELECT * FROM user_prediction_accuracy 
+                WHERE user_id = $1 AND guild_id = $2 AND channel_id = $3 AND tracked_player_puuid = $4
+            `, [userId, guildId, channelId, trackedPlayerPuuid]);
 
             if (result.rows.length === 0) {
-                // Create new user with starting balance
+                // Create new user accuracy record
                 await this.persistence.pool.query(`
-                    INSERT INTO user_credits (user_id, guild_id, balance)
-                    VALUES ($1, $2, 100)
-                `, [userId, guildId]);
+                    INSERT INTO user_prediction_accuracy 
+                    (user_id, guild_id, channel_id, tracked_player_puuid, tracked_player_name)
+                    VALUES ($1, $2, $3, $4, $5)
+                `, [userId, guildId, channelId, trackedPlayerPuuid, trackedPlayerName]);
                 
-                return { balance: 100, canClaimDaily: true, isNewUser: true };
+                return { 
+                    totalPredictions: 0, 
+                    correctPredictions: 0, 
+                    accuracy: 0, 
+                    currentStreak: 0, 
+                    bestStreak: 0,
+                    winPredictions: 0,
+                    lossPredictions: 0,
+                    isNewUser: true 
+                };
             }
 
             const userData = result.rows[0];
-            const today = new Date().toISOString().split('T')[0];
-            const canClaimDaily = !userData.last_daily_claim || userData.last_daily_claim !== today;
-
             return {
-                balance: userData.balance,
-                totalWinnings: userData.total_winnings,
-                totalLosses: userData.total_losses,
-                canClaimDaily,
-                lastClaim: userData.last_daily_claim
+                totalPredictions: userData.total_predictions,
+                correctPredictions: userData.correct_predictions,
+                accuracy: parseFloat(userData.accuracy_percentage),
+                currentStreak: userData.current_streak,
+                bestStreak: userData.best_streak,
+                winPredictions: userData.win_predictions,
+                lossPredictions: userData.loss_predictions,
+                lastPrediction: userData.last_prediction_at
             };
         } catch (error) {
-            console.error('Error getting user credits:', error);
-            return { balance: 100, canClaimDaily: false, error: true };
+            console.error('Error getting user prediction stats:', error);
+            return { 
+                totalPredictions: 0, 
+                correctPredictions: 0, 
+                accuracy: 0, 
+                currentStreak: 0, 
+                bestStreak: 0,
+                error: true 
+            };
         }
     }
 
-    async claimDailyCredits(userId, guildId) {
+    // Get user prediction history for a specific tracked player
+    async getUserPredictionHistory(userId, guildId, channelId, trackedPlayerPuuid, limit = 10) {
         if (!this.persistence.databaseAvailable) {
-            return { success: false, message: 'Database not available' };
+            return [];
         }
 
         try {
-            const today = new Date().toISOString().split('T')[0];
-            
             const result = await this.persistence.pool.query(`
-                UPDATE user_credits 
-                SET balance = balance + 100, 
-                    last_daily_claim = $3,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = $1 AND guild_id = $2 
-                AND (last_daily_claim IS NULL OR last_daily_claim != $3)
-                RETURNING balance
-            `, [userId, guildId, today]);
+                SELECT predicted_outcome, actual_outcome, was_correct, match_id, created_at
+                FROM prediction_history 
+                WHERE user_id = $1 AND guild_id = $2 AND channel_id = $3 AND tracked_player_puuid = $4
+                ORDER BY created_at DESC
+                LIMIT $5
+            `, [userId, guildId, channelId, trackedPlayerPuuid, limit]);
 
-            if (result.rows.length === 0) {
-                return { success: false, message: 'Already claimed today or user not found' };
-            }
-
-            return { 
-                success: true, 
-                newBalance: result.rows[0].balance,
-                message: '+100💎 claimed!' 
-            };
+            return result.rows.map(row => ({
+                predictedOutcome: row.predicted_outcome,
+                actualOutcome: row.actual_outcome,
+                wasCorrect: row.was_correct,
+                matchId: row.match_id,
+                date: row.created_at
+            }));
         } catch (error) {
-            console.error('Error claiming daily credits:', error);
-            return { success: false, message: 'Database error' };
+            console.error('Error getting user prediction history:', error);
+            return [];
         }
     }
 
-    async placeBet(userId, guildId, gameId, playerPuuid, betAmount, betOutcome, channelId, gameStartTime) {
+    async placePrediction(userId, guildId, gameId, playerPuuid, predictedOutcome, channelId, gameStartTime, trackedPlayerName) {
         if (!this.persistence.databaseAvailable) {
             return { success: false, message: 'Database not available' };
         }
@@ -88,297 +107,280 @@ class BettingManager {
         try {
             await this.persistence.pool.query('BEGIN');
 
-            // Check user balance
-            const userCredits = await this.getUserCredits(userId, guildId);
-            if (userCredits.balance < betAmount) {
-                await this.persistence.pool.query('ROLLBACK');
-                return { success: false, message: `Insufficient credits! You have ${userCredits.balance}💎` };
-            }
-
-            // Check if user already has a bet on this game
-            const existingBet = await this.persistence.pool.query(`
-                SELECT id, bet_amount FROM active_bets 
+            // Check if user already has a prediction on this game
+            const existingPrediction = await this.persistence.pool.query(`
+                SELECT id, predicted_outcome FROM active_predictions 
                 WHERE user_id = $1 AND game_id = $2 AND status = 'active'
             `, [userId, gameId]);
 
-            if (existingBet.rows.length > 0) {
-                // Update existing bet instead of rejecting
-                const oldBetAmount = existingBet.rows[0].bet_amount;
-                const creditDiff = betAmount - oldBetAmount;
+            if (existingPrediction.rows.length > 0) {
+                // Update existing prediction instead of rejecting
+                const oldPrediction = existingPrediction.rows[0].predicted_outcome;
                 
-                // Check if user has enough credits for the difference
-                if (creditDiff > 0 && userCredits.balance < creditDiff) {
-                    await this.persistence.pool.query('ROLLBACK');
-                    return { success: false, message: `Need ${creditDiff} more credits to update bet! You have ${userCredits.balance}💎` };
-                }
-                
-                // Update the bet
+                // Update the prediction
                 await this.persistence.pool.query(`
-                    UPDATE active_bets 
-                    SET bet_amount = $3, bet_outcome = $4, created_at = CURRENT_TIMESTAMP
+                    UPDATE active_predictions 
+                    SET predicted_outcome = $3, created_at = CURRENT_TIMESTAMP
                     WHERE user_id = $1 AND game_id = $2
-                `, [userId, gameId, betAmount, betOutcome]);
-                
-                // Update user balance with the difference
-                if (creditDiff !== 0) {
-                    await this.persistence.pool.query(`
-                        UPDATE user_credits 
-                        SET balance = balance - $3, updated_at = CURRENT_TIMESTAMP
-                        WHERE user_id = $1 AND guild_id = $2
-                    `, [userId, guildId, creditDiff]);
-                }
+                `, [userId, gameId, predictedOutcome]);
 
                 await this.persistence.pool.query('COMMIT');
 
                 return { 
                     success: true, 
-                    message: `Bet updated! ${betAmount}💎 on ${betOutcome.toUpperCase()} (${creditDiff > 0 ? 'added ' + creditDiff : creditDiff < 0 ? 'refunded ' + Math.abs(creditDiff) : 'no change'})`,
-                    newBalance: userCredits.balance - creditDiff
+                    message: `Prediction updated! Now predicting ${predictedOutcome.toUpperCase()} (was ${oldPrediction.toUpperCase()})`
                 };
             }
 
-            // Deduct credits and place bet
+            // Place new prediction
             await this.persistence.pool.query(`
-                UPDATE user_credits 
-                SET balance = balance - $3, updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = $1 AND guild_id = $2
-            `, [userId, guildId, betAmount]);
-
-            await this.persistence.pool.query(`
-                INSERT INTO active_bets (
-                    user_id, guild_id, game_id, player_puuid, bet_amount, 
-                    bet_outcome, channel_id, game_start_time
+                INSERT INTO active_predictions (
+                    user_id, guild_id, channel_id, game_id, tracked_player_puuid, 
+                    tracked_player_name, predicted_outcome, game_start_time
                 )
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            `, [userId, guildId, gameId, playerPuuid, betAmount, betOutcome, channelId, gameStartTime]);
+            `, [userId, guildId, channelId, gameId, playerPuuid, trackedPlayerName, predictedOutcome, gameStartTime]);
 
             await this.persistence.pool.query('COMMIT');
 
             return { 
                 success: true, 
-                message: `Bet placed! ${betAmount}💎 on ${betOutcome.toUpperCase()}`,
-                newBalance: userCredits.balance - betAmount
+                message: `Prediction placed! You predict ${predictedOutcome.toUpperCase()}`
             };
         } catch (error) {
             await this.persistence.pool.query('ROLLBACK');
-            console.error('Error placing bet:', error);
+            console.error('Error placing prediction:', error);
             
             // Provide more specific error messages
             if (error.message?.includes('foreign key') || error.message?.includes('constraint')) {
-                return { success: false, message: 'Game no longer exists for betting!' };
+                return { success: false, message: 'Game no longer exists for predictions!' };
             } else if (error.message?.includes('connection') || error.message?.includes('pool')) {
                 return { success: false, message: 'Database connection issue. Please try again!' };
             } else {
-                return { success: false, message: 'Unable to place bet. Please try again!' };
+                return { success: false, message: 'Unable to place prediction. Please try again!' };
             }
         }
     }
 
-    async resolveBets(gameId, actualOutcome, matchId = null) {
+    async resolvePredictions(gameId, actualOutcome, matchId = null) {
         if (!this.persistence.databaseAvailable) {
-            console.log('⚠️ Cannot resolve bets - database not available');
+            console.log('⚠️ Cannot resolve predictions - database not available');
             return [];
         }
 
         try {
-            console.log(`🎰 Resolving bets for game ${gameId}, outcome: ${actualOutcome}`);
+            console.log(`🎯 Resolving predictions for game ${gameId}, outcome: ${actualOutcome}`);
             
             await this.persistence.pool.query('BEGIN');
 
-            // Get all active bets for this game
-            const activeBets = await this.persistence.pool.query(`
-                SELECT * FROM active_bets 
+            // Get all active predictions for this game
+            const activePredictions = await this.persistence.pool.query(`
+                SELECT * FROM active_predictions 
                 WHERE game_id = $1 AND status = 'active'
             `, [gameId]);
 
             const results = [];
 
-            for (const bet of activeBets.rows) {
-                const won = bet.bet_outcome === actualOutcome;
-                const payout = won ? bet.bet_amount * 2 : 0;
-                const resultStatus = won ? 'won' : 'lost';
+            for (const prediction of activePredictions.rows) {
+                const wasCorrect = prediction.predicted_outcome === actualOutcome;
 
-                // Update user balance if they won
-                if (won) {
-                    await this.persistence.pool.query(`
-                        UPDATE user_credits 
-                        SET balance = balance + $2,
-                            total_winnings = total_winnings + $3,
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE user_id = $1
-                    `, [bet.user_id, payout, bet.bet_amount]);
-                } else {
-                    await this.persistence.pool.query(`
-                        UPDATE user_credits 
-                        SET total_losses = total_losses + $2,
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE user_id = $1
-                    `, [bet.user_id, bet.bet_amount]);
-                }
+                // Update user accuracy stats
+                await this.updateUserAccuracy(
+                    prediction.user_id, 
+                    prediction.guild_id, 
+                    prediction.channel_id,
+                    prediction.tracked_player_puuid,
+                    prediction.tracked_player_name,
+                    wasCorrect,
+                    prediction.predicted_outcome
+                );
 
-                // Mark bet as resolved
+                // Mark prediction as resolved
                 await this.persistence.pool.query(`
-                    UPDATE active_bets 
+                    UPDATE active_predictions 
                     SET status = $2, resolved_at = CURRENT_TIMESTAMP
                     WHERE id = $1
-                `, [bet.id, resultStatus]);
+                `, [prediction.id, wasCorrect ? 'correct' : 'incorrect']);
 
-                // Add to bet history
+                // Add to prediction history
                 await this.persistence.pool.query(`
-                    INSERT INTO bet_history (
-                        user_id, guild_id, bet_amount, bet_outcome, 
-                        actual_outcome, result, payout_amount, match_id
+                    INSERT INTO prediction_history (
+                        user_id, guild_id, channel_id, tracked_player_puuid, tracked_player_name,
+                        predicted_outcome, actual_outcome, was_correct, match_id, game_start_time
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 `, [
-                    bet.user_id, bet.guild_id, bet.bet_amount, bet.bet_outcome,
-                    actualOutcome, resultStatus, payout, matchId
+                    prediction.user_id, prediction.guild_id, prediction.channel_id,
+                    prediction.tracked_player_puuid, prediction.tracked_player_name,
+                    prediction.predicted_outcome, actualOutcome, wasCorrect, matchId,
+                    prediction.game_start_time
                 ]);
 
                 results.push({
-                    userId: bet.user_id,
-                    betAmount: bet.bet_amount,
-                    betOutcome: bet.bet_outcome,
-                    won,
-                    payout,
-                    channelId: bet.channel_id
+                    userId: prediction.user_id,
+                    predictedOutcome: prediction.predicted_outcome,
+                    actualOutcome,
+                    wasCorrect,
+                    channelId: prediction.channel_id,
+                    trackedPlayerName: prediction.tracked_player_name
                 });
             }
 
             await this.persistence.pool.query('COMMIT');
-            console.log(`✅ Resolved ${results.length} bets for game ${gameId}`);
+            console.log(`✅ Resolved ${results.length} predictions for game ${gameId}`);
             
             return results;
         } catch (error) {
             await this.persistence.pool.query('ROLLBACK');
-            console.error('Error resolving bets:', error);
+            console.error('Error resolving predictions:', error);
             return [];
         }
     }
 
-    async expireBets(gameId) {
+    async updateUserAccuracy(userId, guildId, channelId, trackedPlayerPuuid, trackedPlayerName, wasCorrect, predictedOutcome) {
+        try {
+            // Get current stats
+            const currentStats = await this.getUserPredictionStats(userId, guildId, channelId, trackedPlayerPuuid, trackedPlayerName);
+            
+            // Calculate new values
+            const newTotalPredictions = currentStats.totalPredictions + 1;
+            const newCorrectPredictions = currentStats.correctPredictions + (wasCorrect ? 1 : 0);
+            const newAccuracy = (newCorrectPredictions / newTotalPredictions) * 100;
+            
+            // Update streak
+            let newCurrentStreak = wasCorrect ? currentStats.currentStreak + 1 : 0;
+            let newBestStreak = Math.max(currentStats.bestStreak, newCurrentStreak);
+            
+            // Update prediction type counts
+            const newWinPredictions = currentStats.winPredictions + (predictedOutcome === 'win' ? 1 : 0);
+            const newLossPredictions = currentStats.lossPredictions + (predictedOutcome === 'loss' ? 1 : 0);
+
+            // Update database
+            await this.persistence.pool.query(`
+                UPDATE user_prediction_accuracy 
+                SET total_predictions = $5,
+                    correct_predictions = $6,
+                    accuracy_percentage = $7,
+                    win_predictions = $8,
+                    loss_predictions = $9,
+                    current_streak = $10,
+                    best_streak = $11,
+                    last_prediction_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = $1 AND guild_id = $2 AND channel_id = $3 AND tracked_player_puuid = $4
+            `, [
+                userId, guildId, channelId, trackedPlayerPuuid,
+                newTotalPredictions, newCorrectPredictions, newAccuracy,
+                newWinPredictions, newLossPredictions, newCurrentStreak, newBestStreak
+            ]);
+
+        } catch (error) {
+            console.error('Error updating user accuracy:', error);
+        }
+    }
+
+    async expirePredictions(gameId) {
         if (!this.persistence.databaseAvailable) {
             return [];
         }
 
         try {
-            // Get active bets and refund them
-            const activeBets = await this.persistence.pool.query(`
-                SELECT * FROM active_bets 
+            // Get active predictions and mark them as expired
+            const activePredictions = await this.persistence.pool.query(`
+                SELECT * FROM active_predictions 
                 WHERE game_id = $1 AND status = 'active'
             `, [gameId]);
 
             await this.persistence.pool.query('BEGIN');
 
-            const refunds = [];
-            for (const bet of activeBets.rows) {
-                // Refund the bet amount
+            const expired = [];
+            for (const prediction of activePredictions.rows) {
+                // Mark prediction as expired (no refunds needed for accuracy system)
                 await this.persistence.pool.query(`
-                    UPDATE user_credits 
-                    SET balance = balance + $2, updated_at = CURRENT_TIMESTAMP
-                    WHERE user_id = $1
-                `, [bet.user_id, bet.bet_amount]);
-
-                // Mark bet as expired
-                await this.persistence.pool.query(`
-                    UPDATE active_bets 
+                    UPDATE active_predictions 
                     SET status = 'expired', resolved_at = CURRENT_TIMESTAMP
                     WHERE id = $1
-                `, [bet.id]);
+                `, [prediction.id]);
 
-                refunds.push({
-                    userId: bet.user_id,
-                    betAmount: bet.bet_amount,
-                    channelId: bet.channel_id
+                expired.push({
+                    userId: prediction.user_id,
+                    predictedOutcome: prediction.predicted_outcome,
+                    channelId: prediction.channel_id,
+                    trackedPlayerName: prediction.tracked_player_name
                 });
             }
 
             await this.persistence.pool.query('COMMIT');
-            console.log(`🔄 Expired and refunded ${refunds.length} bets for game ${gameId}`);
+            console.log(`🔄 Expired ${expired.length} predictions for game ${gameId}`);
             
-            return refunds;
+            return expired;
         } catch (error) {
             await this.persistence.pool.query('ROLLBACK');
-            console.error('Error expiring bets:', error);
+            console.error('Error expiring predictions:', error);
             return [];
         }
     }
 
-    async getUserActiveBets(userId) {
+    async getUserActivePredictions(userId, channelId = null) {
         if (!this.persistence.databaseAvailable) {
             return [];
         }
 
         try {
-            const result = await this.persistence.pool.query(`
-                SELECT * FROM active_bets 
+            let query = `
+                SELECT * FROM active_predictions 
                 WHERE user_id = $1 AND status = 'active'
-                ORDER BY created_at DESC
-            `, [userId]);
+            `;
+            let params = [userId];
 
+            if (channelId) {
+                query += ` AND channel_id = $2`;
+                params.push(channelId);
+            }
+
+            query += ` ORDER BY created_at DESC`;
+
+            const result = await this.persistence.pool.query(query, params);
             return result.rows;
         } catch (error) {
-            console.error('Error getting user active bets:', error);
+            console.error('Error getting user active predictions:', error);
             return [];
         }
     }
 
-    createBettingButtons(gameId, disabled = false) {
-        const winButtons = new ActionRowBuilder().addComponents(
+    createPredictionButtons(gameId, disabled = false) {
+        const predictionButtons = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-                .setCustomId(`bet_win_30_${gameId}`)
-                .setLabel('WIN - 30💎')
+                .setCustomId(`predict_win_${gameId}`)
+                .setLabel('🏆 PREDICT WIN')
                 .setStyle(ButtonStyle.Success)
                 .setDisabled(disabled),
             new ButtonBuilder()
-                .setCustomId(`bet_win_50_${gameId}`)
-                .setLabel('WIN - 50💎')
-                .setStyle(ButtonStyle.Success)
-                .setDisabled(disabled),
-            new ButtonBuilder()
-                .setCustomId(`bet_win_100_${gameId}`)
-                .setLabel('WIN - 100💎')
-                .setStyle(ButtonStyle.Success)
-                .setDisabled(disabled)
-        );
-
-        const lossButtons = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId(`bet_loss_30_${gameId}`)
-                .setLabel('LOSS - 30💎')
-                .setStyle(ButtonStyle.Danger)
-                .setDisabled(disabled),
-            new ButtonBuilder()
-                .setCustomId(`bet_loss_50_${gameId}`)
-                .setLabel('LOSS - 50💎')
-                .setStyle(ButtonStyle.Danger)
-                .setDisabled(disabled),
-            new ButtonBuilder()
-                .setCustomId(`bet_loss_100_${gameId}`)
-                .setLabel('LOSS - 100💎')
+                .setCustomId(`predict_loss_${gameId}`)
+                .setLabel('💀 PREDICT LOSS')
                 .setStyle(ButtonStyle.Danger)
                 .setDisabled(disabled)
         );
 
         const utilityButtons = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-                .setCustomId(`balance_${gameId}`)
-                .setLabel('💰 Balance')
+                .setCustomId(`accuracy_${gameId}`)
+                .setLabel('📊 My Accuracy')
                 .setStyle(ButtonStyle.Secondary)
                 .setDisabled(disabled),
             new ButtonBuilder()
-                .setCustomId(`daily_${gameId}`)
-                .setLabel('📊 Daily: +100💎')
+                .setCustomId(`leaderboard_${gameId}`)
+                .setLabel('🏅 Leaderboard')
                 .setStyle(ButtonStyle.Secondary)
                 .setDisabled(disabled),
             new ButtonBuilder()
                 .setCustomId(`stats_${gameId}`)
-                .setLabel('📈 Stats')
+                .setLabel('📈 Game Stats')
                 .setStyle(ButtonStyle.Secondary)
                 .setDisabled(disabled)
         );
 
-        return [winButtons, lossButtons, utilityButtons];
+        return [predictionButtons, utilityButtons];
     }
 
     // Store betting panel info for later updates
@@ -457,8 +459,8 @@ class BettingManager {
         }
     }
 
-    // Enhanced betting panel creation with team displays and stats
-    async createEnhancedBettingPanel(gameAnalysis) {
+    // Enhanced prediction panel creation with team displays and stats
+    async createEnhancedPredictionPanel(gameAnalysis) {
         try {
             const { trackedPlayer, teams, gameId, gameStartTime } = gameAnalysis;
 
@@ -509,8 +511,8 @@ class BettingManager {
 
             const embed = new EmbedBuilder()
                 .setColor(0x00ff00)
-                .setTitle('🎮 LIVE RANKED GAME - BETTING OPEN 🎮')
-                .setDescription(`${trackedPlayer.summoner.gameName}#${trackedPlayer.summoner.tagLine} vs Enemy Team | ⏱️ Betting closes <t:${Math.floor(Date.now() / 1000) + 240}:R>`)
+                .setTitle('🎯 LIVE RANKED GAME - PREDICTIONS OPEN 🎯')
+                .setDescription(`${trackedPlayer.summoner.gameName}#${trackedPlayer.summoner.tagLine} vs Enemy Team | ⏱️ Predictions close <t:${Math.floor(Date.now() / 1000) + 240}:R>`)
                 .setThumbnail(championImageUrl)
                 .addFields(
                     {
@@ -534,15 +536,15 @@ class BettingManager {
                         inline: false
                     },
                     {
-                        name: '🎯 PLACE YOUR BET',
-                        value: `Bet on **${trackedPlayer.summoner.gameName}**'s game outcome:`,
+                        name: '🎯 MAKE YOUR PREDICTION',
+                        value: `Predict **${trackedPlayer.summoner.gameName}**'s game outcome to improve your accuracy!`,
                         inline: false
                     }
                 )
-                .setFooter({ text: 'LoL Paparazzi Betting • Double or nothing!' })
+                .setFooter({ text: 'LoL Paparazzi Predictions • Track your accuracy!' })
                 .setTimestamp();
 
-            const buttons = this.createBettingButtons(gameId, false);
+            const buttons = this.createPredictionButtons(gameId, false);
 
             return { 
                 embeds: [embed], 
@@ -555,17 +557,17 @@ class BettingManager {
             // Fallback simple panel
             const embed = new EmbedBuilder()
                 .setColor(0xff9900)
-                .setTitle('🎮 LIVE RANKED GAME - BETTING OPEN 🎮')
+                .setTitle('🎯 LIVE RANKED GAME - PREDICTIONS OPEN 🎯')
                 .setDescription('Loading game details...')
                 .addFields({
-                    name: '🎯 PLACE YOUR BET',
-                    value: 'Bet on the game outcome:',
+                    name: '🎯 MAKE YOUR PREDICTION',
+                    value: 'Predict the game outcome:',
                     inline: false
                 })
-                .setFooter({ text: 'LoL Paparazzi Betting • Double or nothing!' })
+                .setFooter({ text: 'LoL Paparazzi Predictions • Track your accuracy!' })
                 .setTimestamp();
 
-            const buttons = this.createBettingButtons(gameAnalysis.gameId, false);
+            const buttons = this.createPredictionButtons(gameAnalysis.gameId, false);
             return { embeds: [embed], components: buttons };
         }
     }
@@ -613,6 +615,113 @@ class BettingManager {
     calculateTeamWinrate(team) {
         const totalWinrate = team.reduce((sum, player) => sum + player.rankedStats.winrate, 0);
         return Math.round(totalWinrate / team.length);
+    }
+
+    // Get channel leaderboard for a specific tracked player
+    async getChannelLeaderboard(channelId, trackedPlayerPuuid, limit = 10) {
+        if (!this.persistence.databaseAvailable) {
+            return [];
+        }
+
+        try {
+            const result = await this.persistence.pool.query(`
+                SELECT user_id, total_predictions, correct_predictions, accuracy_percentage, 
+                       current_streak, best_streak, win_predictions, loss_predictions
+                FROM user_prediction_accuracy 
+                WHERE channel_id = $1 AND tracked_player_puuid = $2 AND total_predictions > 0
+                ORDER BY accuracy_percentage DESC, total_predictions DESC
+                LIMIT $3
+            `, [channelId, trackedPlayerPuuid, limit]);
+
+            return result.rows.map((row, index) => ({
+                rank: index + 1,
+                userId: row.user_id,
+                totalPredictions: row.total_predictions,
+                correctPredictions: row.correct_predictions,
+                accuracy: parseFloat(row.accuracy_percentage),
+                currentStreak: row.current_streak,
+                bestStreak: row.best_streak,
+                winPredictions: row.win_predictions,
+                lossPredictions: row.loss_predictions
+            }));
+        } catch (error) {
+            console.error('Error getting channel leaderboard:', error);
+            return [];
+        }
+    }
+
+    // Create accuracy display content for a user
+    async createAccuracyDisplay(userId, guildId, channelId, trackedPlayerPuuid, trackedPlayerName) {
+        try {
+            const stats = await this.getUserPredictionStats(userId, guildId, channelId, trackedPlayerPuuid, trackedPlayerName);
+            const history = await this.getUserPredictionHistory(userId, guildId, channelId, trackedPlayerPuuid, 5);
+
+            let content = `**📊 YOUR PREDICTION ACCURACY**\n\n`;
+            content += `**Player:** ${trackedPlayerName}\n`;
+            content += `**Total Predictions:** ${stats.totalPredictions}\n`;
+            content += `**Correct Predictions:** ${stats.correctPredictions}\n`;
+            content += `**Accuracy:** ${stats.accuracy.toFixed(1)}%\n`;
+            content += `**Current Streak:** ${stats.currentStreak}\n`;
+            content += `**Best Streak:** ${stats.bestStreak}\n\n`;
+
+            content += `**Prediction Breakdown:**\n`;
+            content += `• WIN predictions: ${stats.winPredictions}\n`;
+            content += `• LOSS predictions: ${stats.lossPredictions}\n\n`;
+
+            if (history.length > 0) {
+                content += `**Recent History:**\n`;
+                history.forEach(h => {
+                    const icon = h.wasCorrect ? '✅' : '❌';
+                    content += `${icon} Predicted ${h.predictedOutcome.toUpperCase()}, was ${h.actualOutcome.toUpperCase()}\n`;
+                });
+            } else {
+                content += `**No prediction history yet** - Make your first prediction!`;
+            }
+
+            return content;
+        } catch (error) {
+            console.error('Error creating accuracy display:', error);
+            return '❌ Error loading your accuracy stats!';
+        }
+    }
+
+    // Create leaderboard display content
+    async createLeaderboardDisplay(channelId, trackedPlayerPuuid, trackedPlayerName) {
+        try {
+            const leaderboard = await this.getChannelLeaderboard(channelId, trackedPlayerPuuid, 10);
+
+            if (leaderboard.length === 0) {
+                return `**🏅 PREDICTION LEADERBOARD**\n\n**Player:** ${trackedPlayerName}\n\n*No predictions yet - be the first to predict!*`;
+            }
+
+            let content = `**🏅 PREDICTION LEADERBOARD**\n\n`;
+            content += `**Player:** ${trackedPlayerName}\n\n`;
+
+            leaderboard.forEach(entry => {
+                const medal = entry.rank === 1 ? '🥇' : entry.rank === 2 ? '🥈' : entry.rank === 3 ? '🥉' : `${entry.rank}.`;
+                content += `${medal} <@${entry.userId}> - ${entry.accuracy.toFixed(1)}% (${entry.correctPredictions}/${entry.totalPredictions})\n`;
+                content += `   • Streak: ${entry.currentStreak} | Best: ${entry.bestStreak}\n\n`;
+            });
+
+            return content;
+        } catch (error) {
+            console.error('Error creating leaderboard display:', error);
+            return '❌ Error loading leaderboard!';
+        }
+    }
+
+    // Format time remaining helper
+    formatTimeRemaining(timeRemainingSeconds) {
+        if (timeRemainingSeconds <= 0) return 0;
+        
+        const minutes = Math.floor(timeRemainingSeconds / 60);
+        const seconds = timeRemainingSeconds % 60;
+        
+        if (minutes > 0) {
+            return `${minutes}m ${seconds}s`;
+        } else {
+            return `${seconds}s`;
+        }
     }
 }
 

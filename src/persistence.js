@@ -151,9 +151,85 @@ class PersistenceManager {
 
     async initializeBettingTables() {
         try {
-            console.log('🎰 Initializing betting system tables...');
+            console.log('🎰 Initializing accuracy tracking system tables...');
             
-            // Create user credits table
+            // Create user prediction accuracy table (per player, per channel)
+            await this.pool.query(`
+                CREATE TABLE IF NOT EXISTS user_prediction_accuracy (
+                    id SERIAL PRIMARY KEY,
+                    user_id VARCHAR(255) NOT NULL,
+                    guild_id VARCHAR(255) NOT NULL,
+                    channel_id VARCHAR(255) NOT NULL,
+                    tracked_player_puuid VARCHAR(255) NOT NULL,
+                    tracked_player_name VARCHAR(255) NOT NULL,
+                    total_predictions INTEGER DEFAULT 0,
+                    correct_predictions INTEGER DEFAULT 0,
+                    accuracy_percentage DECIMAL(5,2) DEFAULT 0.00,
+                    win_predictions INTEGER DEFAULT 0,
+                    loss_predictions INTEGER DEFAULT 0,
+                    current_streak INTEGER DEFAULT 0,
+                    best_streak INTEGER DEFAULT 0,
+                    last_prediction_at TIMESTAMP WITH TIME ZONE,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, guild_id, channel_id, tracked_player_puuid)
+                )
+            `);
+            console.log('✅ User prediction accuracy table initialized');
+            
+            // Create active predictions table (replaces active_bets)
+            await this.pool.query(`
+                CREATE TABLE IF NOT EXISTS active_predictions (
+                    id SERIAL PRIMARY KEY,
+                    user_id VARCHAR(255) NOT NULL,
+                    guild_id VARCHAR(255) NOT NULL,
+                    channel_id VARCHAR(255) NOT NULL,
+                    game_id VARCHAR(255) NOT NULL,
+                    tracked_player_puuid VARCHAR(255) NOT NULL,
+                    tracked_player_name VARCHAR(255) NOT NULL,
+                    predicted_outcome VARCHAR(10) NOT NULL,
+                    game_start_time TIMESTAMP WITH TIME ZONE NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    resolved_at TIMESTAMP WITH TIME ZONE,
+                    status VARCHAR(20) DEFAULT 'active'
+                )
+            `);
+            console.log('✅ Active predictions table initialized');
+            
+            // Create betting panels table to prevent duplicates (unchanged)
+            await this.pool.query(`
+                CREATE TABLE IF NOT EXISTS betting_panels (
+                    id SERIAL PRIMARY KEY,
+                    game_id VARCHAR(255) NOT NULL UNIQUE,
+                    message_id VARCHAR(255) NOT NULL,
+                    channel_id VARCHAR(255) NOT NULL,
+                    player_puuid VARCHAR(255) NOT NULL,
+                    sent_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    game_start_time TIMESTAMP WITH TIME ZONE
+                )
+            `);
+            console.log('✅ Betting panels table initialized');
+            
+            // Create prediction history table (replaces bet_history)
+            await this.pool.query(`
+                CREATE TABLE IF NOT EXISTS prediction_history (
+                    id SERIAL PRIMARY KEY,
+                    user_id VARCHAR(255) NOT NULL,
+                    guild_id VARCHAR(255) NOT NULL,
+                    channel_id VARCHAR(255) NOT NULL,
+                    tracked_player_puuid VARCHAR(255) NOT NULL,
+                    tracked_player_name VARCHAR(255) NOT NULL,
+                    predicted_outcome VARCHAR(10) NOT NULL,
+                    actual_outcome VARCHAR(10) NOT NULL,
+                    was_correct BOOLEAN NOT NULL,
+                    match_id VARCHAR(255),
+                    game_start_time TIMESTAMP WITH TIME ZONE,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+            console.log('✅ Prediction history table initialized');
+            
+            // Keep legacy tables for migration period, but mark them as deprecated
             await this.pool.query(`
                 CREATE TABLE IF NOT EXISTS user_credits (
                     id SERIAL PRIMARY KEY,
@@ -167,9 +243,7 @@ class PersistenceManager {
                     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                 )
             `);
-            console.log('✅ User credits table initialized');
             
-            // Create active bets table
             await this.pool.query(`
                 CREATE TABLE IF NOT EXISTS active_bets (
                     id SERIAL PRIMARY KEY,
@@ -186,23 +260,7 @@ class PersistenceManager {
                     status VARCHAR(20) DEFAULT 'active'
                 )
             `);
-            console.log('✅ Active bets table initialized');
             
-            // Create betting panels table to prevent duplicates
-            await this.pool.query(`
-                CREATE TABLE IF NOT EXISTS betting_panels (
-                    id SERIAL PRIMARY KEY,
-                    game_id VARCHAR(255) NOT NULL UNIQUE,
-                    message_id VARCHAR(255) NOT NULL,
-                    channel_id VARCHAR(255) NOT NULL,
-                    player_puuid VARCHAR(255) NOT NULL,
-                    sent_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                    game_start_time TIMESTAMP WITH TIME ZONE
-                )
-            `);
-            console.log('✅ Betting panels table initialized');
-            
-            // Create bet history table
             await this.pool.query(`
                 CREATE TABLE IF NOT EXISTS bet_history (
                     id SERIAL PRIMARY KEY,
@@ -217,10 +275,10 @@ class PersistenceManager {
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                 )
             `);
-            console.log('✅ Bet history table initialized');
+            console.log('✅ Legacy betting tables maintained for migration');
             
         } catch (error) {
-            console.error('❌ Error initializing betting tables:', error.message);
+            console.error('❌ Error initializing accuracy tracking tables:', error.message);
         }
     }
 

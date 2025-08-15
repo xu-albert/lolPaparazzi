@@ -20,6 +20,7 @@
       "WebFetch(domain:static.developer.riotgames.com)",
       "Bash(grep:*)"
     ],
-    "deny": []
+    "deny": [],
+    "defaultMode": "acceptEdits"
   }
 }

@@ -14,34 +14,35 @@ A Discord bot that tracks League of Legends ranked solo/duo queue gaming session
 - 📈 **Positive feedback** - Only shows LP gains to encourage players
 - 🎭 **Champion artwork** - Visual displays using Riot's Data Dragon API
 - 👥 **Role management** - Users can opt-in/out of session notifications
-- 🎰 **Interactive betting system** - Bet virtual currency on game outcomes with real-time odds
-- 💎 **Virtual economy** - Credit system with daily bonuses and transaction history
-- 📊 **Live game analysis** - Detailed team compositions with champion-specific stats
-- 🏅 **Comprehensive player stats** - Recent winrates, champion performance, and team analysis
+- 🎯 **Interactive prediction system** - Predict game outcomes to track your accuracy
+- 📊 **Accuracy tracking** - Personal prediction statistics isolated per tracked player
+- 🏅 **Leaderboards** - Channel-specific accuracy rankings and streak tracking
+- 📈 **Live game analysis** - Detailed team compositions with champion-specific stats
 
 ## How It Works
 
 The bot monitors players and provides intelligent notifications:
 
 - **Session Start**: When a player begins their first ranked game (with role ping for subscribers)
-- **Live Betting**: Interactive betting panel with team analysis, champion stats, and 4-minute betting window
+- **Live Predictions**: Interactive prediction panel with team analysis, champion stats, and 4-minute prediction window
 - **Post-Game**: Match results with champion artwork, KDA, CS, LP changes (wins only)
-- **Betting Results**: Automatic payout notifications for winners (2x credits) and bet resolution
+- **Prediction Results**: Automatic accuracy updates and results notifications for all participants
 - **Session End**: Comprehensive summary with duration, W/L record, LP delta, and champion stats
 
 Sessions span multiple games with accurate timing based on actual gameplay, not detection delays.
 
-### Betting System
+### Prediction System
 
-- **Virtual Currency**: Users start with 100💎 and receive 100💎 daily automatically
-- **Betting Options**: 30💎, 50💎, or 100💎 bets on WIN or LOSS outcomes
-- **Flexible Betting**: Users can change their bets until the 4-minute deadline expires
+- **Accuracy Tracking**: Personal prediction statistics isolated per tracked player and channel
+- **Prediction Options**: Simple WIN or LOSS predictions on game outcomes
+- **Flexible Predictions**: Users can change their predictions until the 4-minute deadline expires
 - **Live Analysis**: Real-time team compositions with ranked winrates and champion-specific stats
-- **Smart Timing**: 4-minute betting window with Discord dynamic countdown timers
-- **Fair Payouts**: 2x payout on correct predictions, lose bet amount on wrong predictions
+- **Smart Timing**: 4-minute prediction window with Discord dynamic countdown timers
+- **Streak Tracking**: Current and best prediction streaks for each user
 - **Champion Insights**: Shows "First game on Champion!" for new picks with no ranked history
-- **Deploy Resistant**: No duplicate betting panels when bot restarts during games
-- **Visual Design**: Champion portraits, team layouts, clear win/loss tracking
+- **Deploy Resistant**: No duplicate prediction panels when bot restarts during games
+- **Leaderboards**: Channel-specific rankings based on prediction accuracy
+- **Statistics**: Win/loss prediction breakdowns and prediction history
 
 ## Prerequisites
 
@@ -246,13 +247,13 @@ docker run -d --name lolpaparazzi \
 - `/join` - Get the Paparazzi role to receive session notifications
 - `/leave` - Remove the Paparazzi role to stop notifications
 
-### Betting Commands
-- **Betting Buttons**: Interact with betting panels (WIN/LOSS at 30💎, 50💎, 100💎)
-- **Balance Button**: Check your current credit balance and statistics
-- **Daily Button**: Claim your daily 100💎 credits (once per day)
+### Prediction Commands
+- **Prediction Buttons**: Interact with prediction panels (WIN/LOSS predictions)
+- **Accuracy Button**: Check your prediction accuracy statistics for the tracked player
+- **Leaderboard Button**: View channel leaderboard for the tracked player
 - **Stats Button**: View detailed game analysis and team compositions
 
-*Note: Betting commands are interactive buttons, not slash commands*
+*Note: Prediction commands are interactive buttons, not slash commands*
 
 ## Configuration
 
@@ -292,11 +293,11 @@ The bot automatically creates these tables:
 - **session_stats** - Aggregated session statistics
 - **pending_match_analysis** - Queue for post-game analysis
 
-**Betting Tables:**
-- **user_credits** - User balances and betting statistics
-- **active_bets** - Current bets on ongoing games
+**Prediction Tables:**
+- **user_prediction_accuracy** - User accuracy stats per tracked player/channel
+- **active_predictions** - Current predictions on ongoing games
 - **betting_panels** - Tracks sent panels to prevent duplicates
-- **bet_history** - Historical betting records
+- **prediction_history** - Historical prediction records with outcomes
 
 No manual database setup required - schema is created automatically on first run.
 
@@ -432,21 +433,22 @@ npm run format
 ## Roadmap
 
 ### Short Term (Next Release)
-- [ ] Game duration check to prevent betting on games >5 minutes old
-- [ ] Betting statistics and leaderboards
-- [ ] User betting history viewing
+- [ ] Game duration check to prevent predictions on games >5 minutes old
+- [ ] Admin functionality to edit user accuracy stats (for bugs/exploits)
+- [ ] Prediction results display within prediction panels
+- [ ] Enhanced prediction statistics and analytics
 
 ### Medium Term
 - [ ] Multi-player tracking support
-- [ ] Betting on multiple simultaneous games
-- [ ] Advanced betting analytics and trends
-- [ ] Web dashboard for statistics
+- [ ] Predictions on multiple simultaneous games
+- [ ] Advanced prediction analytics and trends
+- [ ] Web dashboard for statistics and leaderboards
 
 ### Long Term
 - [ ] Support for other game modes (ARAM, normal drafts)
 - [ ] Integration with more LoL APIs
 - [ ] Tournament bracket predictions
-- [ ] Social features and betting groups
+- [ ] Social features and prediction groups
 
 ## License
 

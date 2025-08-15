@@ -81,34 +81,33 @@ async function handleBettingButtons(interaction) {
         const customId = interaction.customId;
         console.log(`🎰 Button interaction: ${customId}`);
         
-        // Parse button custom ID: action_outcome_amount_gameId or action_gameId
+        // Parse button custom ID: action_outcome_gameId or action_gameId
         const parts = customId.split('_');
         const action = parts[0];
         
-        if (action === 'bet') {
+        if (action === 'predict') {
             const outcome = parts[1]; // 'win' or 'loss'
-            const amount = parseInt(parts[2]); // 30, 50, or 100
-            const gameId = parseInt(parts[3]); // Convert to number to match Riot API
+            const gameId = parseInt(parts[2]); // Convert to number to match Riot API
             
-            await handleBetPlacement(interaction, gameId, outcome, amount);
-        } else if (action === 'balance') {
+            await handlePredictionPlacement(interaction, gameId, outcome);
+        } else if (action === 'accuracy') {
             const gameId = parseInt(parts[1]);
-            await handleBalanceCheck(interaction);
-        } else if (action === 'daily') {
+            await handleAccuracyDisplay(interaction, gameId);
+        } else if (action === 'leaderboard') {
             const gameId = parseInt(parts[1]);
-            await handleDailyCredits(interaction);
+            await handleLeaderboardDisplay(interaction, gameId);
         } else if (action === 'stats') {
             const gameId = parseInt(parts[1]);
             await handleStatsDisplay(interaction, gameId);
         }
     } catch (error) {
-        console.error('Error handling betting button:', error);
+        console.error('Error handling prediction button:', error);
         
         // Provide more specific error messages based on the error type
-        let errorContent = '❌ Unable to process betting action!';
+        let errorContent = '❌ Unable to process prediction action!';
         
         if (error.message?.includes('game')) {
-            errorContent = '🎮 Game is no longer available for betting!';
+            errorContent = '🎮 Game is no longer available for predictions!';
         } else if (error.message?.includes('database') || error.message?.includes('pool')) {
             errorContent = '💾 Database temporarily unavailable. Please try again!';
         } else if (error.message?.includes('network') || error.message?.includes('fetch')) {
@@ -130,16 +129,16 @@ async function handleBettingButtons(interaction) {
     }
 }
 
-async function handleBetPlacement(interaction, gameId, outcome, amount) {
+async function handlePredictionPlacement(interaction, gameId, outcome) {
     const userId = interaction.user.id;
     const guildId = interaction.guild.id;
     const channelId = interaction.channel.id;
     
-    // Check if betting window is still open
+    // Check if prediction window is still open
     const timeRemaining = bettingManager.getBettingTimeRemaining(gameId);
     if (timeRemaining <= 0) {
         return await interaction.reply({
-            content: '🚫 Betting window has closed for this game!',
+            content: '🚫 Prediction window has closed for this game!',
             ephemeral: true
         });
     }
@@ -153,18 +152,19 @@ async function handleBetPlacement(interaction, gameId, outcome, amount) {
         });
     }
     
-    // Get summoner info for bet placement
+    // Get summoner info for prediction placement
     const summoner = await riotApi.getSummonerByName(playerSession.originalInput);
     const gameStartTime = new Date();
+    const trackedPlayerName = `${summoner.gameName}#${summoner.tagLine}`;
     
-    const result = await bettingManager.placeBet(
+    const result = await bettingManager.placePrediction(
         userId, guildId, gameId, summoner.puuid, 
-        amount, outcome, channelId, gameStartTime
+        outcome, channelId, gameStartTime, trackedPlayerName
     );
     
     if (result.success) {
         await interaction.reply({
-            content: `✅ ${result.message}\nRemaining balance: ${result.newBalance}💎`,
+            content: `✅ ${result.message}`,
             ephemeral: true
         });
     } else {
@@ -175,48 +175,71 @@ async function handleBetPlacement(interaction, gameId, outcome, amount) {
     }
 }
 
-async function handleBalanceCheck(interaction) {
+async function handleAccuracyDisplay(interaction, gameId) {
     const userId = interaction.user.id;
     const guildId = interaction.guild.id;
+    const channelId = interaction.channel.id;
     
-    const credits = await bettingManager.getUserCredits(userId, guildId);
-    const activeBets = await bettingManager.getUserActiveBets(userId);
-    
-    let response = `💰 **Your Balance:** ${credits.balance}💎\n`;
-    response += `📊 **Total Winnings:** ${credits.totalWinnings || 0}💎\n`;
-    response += `📉 **Total Losses:** ${credits.totalLosses || 0}💎\n`;
-    
-    if (activeBets.length > 0) {
-        response += `\n🎯 **Active Bets:** ${activeBets.length}\n`;
-        activeBets.forEach(bet => {
-            response += `• ${bet.bet_amount}💎 on ${bet.bet_outcome.toUpperCase()}\n`;
-        });
-    }
-    
-    if (credits.canClaimDaily) {
-        response += '\n🎁 You can claim your daily 100💎 bonus!';
-    }
-    
-    await interaction.reply({
-        content: response,
-        ephemeral: true
-    });
-}
-
-async function handleDailyCredits(interaction) {
-    const userId = interaction.user.id;
-    const guildId = interaction.guild.id;
-    
-    const result = await bettingManager.claimDailyCredits(userId, guildId);
-    
-    if (result.success) {
+    try {
+        // Get tracked player info for this game
+        const playerSession = tracker.playerSession;
+        if (!playerSession.currentGameId || playerSession.currentGameId !== gameId) {
+            return await interaction.reply({
+                content: '❌ This game is no longer active!',
+                ephemeral: true
+            });
+        }
+        
+        // Get summoner info
+        const summoner = await riotApi.getSummonerByName(playerSession.originalInput);
+        const trackedPlayerName = `${summoner.gameName}#${summoner.tagLine}`;
+        
+        const response = await bettingManager.createAccuracyDisplay(
+            userId, guildId, channelId, summoner.puuid, trackedPlayerName
+        );
+        
         await interaction.reply({
-            content: `🎁 ${result.message} New balance: ${result.newBalance}💎`,
+            content: response,
             ephemeral: true
         });
-    } else {
+    } catch (error) {
+        console.error('Error handling accuracy display:', error);
         await interaction.reply({
-            content: `❌ ${result.message}`,
+            content: '❌ Error loading your accuracy stats!',
+            ephemeral: true
+        });
+    }
+}
+
+async function handleLeaderboardDisplay(interaction, gameId) {
+    const channelId = interaction.channel.id;
+    
+    try {
+        // Get tracked player info for this game
+        const playerSession = tracker.playerSession;
+        if (!playerSession.currentGameId || playerSession.currentGameId !== gameId) {
+            return await interaction.reply({
+                content: '❌ This game is no longer active!',
+                ephemeral: true
+            });
+        }
+        
+        // Get summoner info
+        const summoner = await riotApi.getSummonerByName(playerSession.originalInput);
+        const trackedPlayerName = `${summoner.gameName}#${summoner.tagLine}`;
+        
+        const response = await bettingManager.createLeaderboardDisplay(
+            channelId, summoner.puuid, trackedPlayerName
+        );
+        
+        await interaction.reply({
+            content: response,
+            ephemeral: true
+        });
+    } catch (error) {
+        console.error('Error handling leaderboard display:', error);
+        await interaction.reply({
+            content: '❌ Error loading leaderboard!',
             ephemeral: true
         });
     }
@@ -253,20 +276,20 @@ async function handleStatsDisplay(interaction, gameId) {
         const timeText = bettingManager.formatTimeRemaining(timeRemaining);
         
         let response = `${statsContent}\n\n`;
-        response += `⏰ **Betting Window:** ${timeText > 0 ? `${timeText} remaining` : 'CLOSED'}\n`;
+        response += `⏰ **Prediction Window:** ${timeText > 0 ? `${timeText} remaining` : 'CLOSED'}\n`;
         
-        // Show user's active bets for this game
+        // Show user's active predictions for this game
         const userId = interaction.user.id;
-        const activeBets = await bettingManager.getUserActiveBets(userId);
-        const gameBets = activeBets.filter(bet => bet.game_id === gameId);
+        const activePredictions = await bettingManager.getUserActivePredictions(userId, interaction.channel.id);
+        const gamePredictions = activePredictions.filter(prediction => prediction.game_id === gameId);
         
-        if (gameBets.length > 0) {
-            response += `\n🎯 **Your Bets:**\n`;
-            gameBets.forEach(bet => {
-                response += `• ${bet.bet_amount}💎 on ${bet.bet_outcome.toUpperCase()}\n`;
+        if (gamePredictions.length > 0) {
+            response += `\n🎯 **Your Predictions:**\n`;
+            gamePredictions.forEach(prediction => {
+                response += `• Predicting ${prediction.predicted_outcome.toUpperCase()}\n`;
             });
         } else {
-            response += `\n💡 **No bets placed** - Use the buttons above to bet!`;
+            response += `\n💡 **No predictions made** - Use the buttons above to predict!`;
         }
         
         await interaction.reply({
@@ -282,60 +305,7 @@ async function handleStatsDisplay(interaction, gameId) {
     }
 }
 
-// Daily credit distribution system
-async function distributeDailyCredits() {
-    if (!bettingManager.persistence.databaseAvailable) {
-        console.log('⚠️ Skipping daily credit distribution - database not available');
-        return;
-    }
-
-    try {
-        console.log('🎁 Starting daily credit distribution...');
-        
-        const today = new Date().toISOString().split('T')[0];
-        
-        // Get all users who haven't claimed today
-        const result = await bettingManager.persistence.pool.query(`
-            SELECT user_id, guild_id, balance 
-            FROM user_credits 
-            WHERE last_daily_claim IS NULL OR last_daily_claim < $1
-        `, [today]);
-        
-        let distributionCount = 0;
-        
-        for (const user of result.rows) {
-            try {
-                await bettingManager.persistence.pool.query(`
-                    UPDATE user_credits 
-                    SET balance = balance + 100, 
-                        last_daily_claim = $3,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE user_id = $1 AND guild_id = $2
-                `, [user.user_id, user.guild_id, today]);
-                
-                distributionCount++;
-            } catch (error) {
-                console.error(`Error distributing credits to user ${user.user_id}:`, error);
-            }
-        }
-        
-        console.log(`✅ Daily credit distribution complete: ${distributionCount} users received 100💎`);
-    } catch (error) {
-        console.error('❌ Error during daily credit distribution:', error);
-    }
-}
-
-// Schedule daily credit distribution at midnight UTC
-cron.schedule('0 0 * * *', async () => {
-    console.log('🕛 Midnight UTC - Running daily credit distribution...');
-    await distributeDailyCredits();
-});
-
-// Run initial distribution check on startup (in case bot was offline at midnight)
-setTimeout(async () => {
-    console.log('🔄 Running startup credit distribution check...');
-    await distributeDailyCredits();
-}, 5000); // Wait 5 seconds after startup
+// Prediction system - no daily distributions needed for accuracy tracking
 
 // Clean up old betting panels on startup and periodically
 bettingManager.persistence.cleanupOldBettingPanels();

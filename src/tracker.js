@@ -267,21 +267,21 @@ class PlayerTracker {
 
             // Create and send betting panel if betting manager is available
             if (this.bettingManager && gameData) {
-                console.log('🎰 Creating betting panel for new game...');
+                console.log('🎯 Creating prediction panel for new game...');
                 
                 try {
-                    // Analyze the current game for detailed betting panel
+                    // Analyze the current game for detailed prediction panel
                     const gameAnalysis = await this.riotApi.analyzeCurrentGame(summoner, gameData);
-                    const bettingPanel = await this.bettingManager.createEnhancedBettingPanel(gameAnalysis);
+                    const predictionPanel = await this.bettingManager.createEnhancedPredictionPanel(gameAnalysis);
                     
                     // Check if panel was created (null means duplicate was prevented)
-                    if (!bettingPanel) {
-                        console.log(`🎰 Betting panel already exists for game ${gameData.gameId} - skipping`);
+                    if (!predictionPanel) {
+                        console.log(`🎯 Prediction panel already exists for game ${gameData.gameId} - skipping`);
                         return; // Skip sending duplicate panel
                     }
                     
-                    // Send the betting panel with Paparazzi role ping
-                    let content = '🎰 **BETTING IS NOW LIVE!** 🎰';
+                    // Send the prediction panel with Paparazzi role ping
+                    let content = '🎯 **PREDICTIONS ARE NOW OPEN!** 🎯';
                     const guild = channel.guild;
                     if (guild) {
                         const paparazziRole = guild.roles.cache.find(role => role.name === 'Paparazzi');
@@ -292,10 +292,10 @@ class PlayerTracker {
                     
                     const message = await channel.send({
                         content,
-                        ...bettingPanel
+                        ...predictionPanel
                     });
                     
-                    // Save betting panel to database (prevents future duplicates)
+                    // Save prediction panel to database (prevents future duplicates)
                     await this.persistence.saveBettingPanel(
                         gameData.gameId,
                         message.id,
@@ -304,7 +304,7 @@ class PlayerTracker {
                         gameData.gameStartTime ? new Date(gameData.gameStartTime) : new Date()
                     );
                     
-                    // Track the betting panel for timer updates
+                    // Track the prediction panel for timer updates
                     this.bettingManager.setBettingPanel(
                         gameData.gameId, 
                         message.id, 
@@ -312,9 +312,9 @@ class PlayerTracker {
                         Date.now()
                     );
                     
-                    console.log(`✅ Betting panel created and saved for game ${gameData.gameId}`);
+                    console.log(`✅ Prediction panel created and saved for game ${gameData.gameId}`);
                 } catch (error) {
-                    console.error('Error creating betting panel:', error);
+                    console.error('Error creating prediction panel:', error);
                     
                     // Send basic session start notification as fallback
                     const basicEmbed = {
@@ -667,16 +667,16 @@ class PlayerTracker {
             
             // Resolve bets if betting manager is available
             if (this.bettingManager && gameId) {
-                console.log('🎰 Resolving bets for completed game...');
+                console.log('🎯 Resolving predictions for completed game...');
                 try {
                     const actualOutcome = playerStats.win ? 'win' : 'loss';
-                    const betResults = await this.bettingManager.resolveBets(gameId, actualOutcome, mostRecentMatchId);
+                    const predictionResults = await this.bettingManager.resolvePredictions(gameId, actualOutcome, mostRecentMatchId);
                     
-                    if (betResults.length > 0) {
-                        await this.sendBettingResults(betResults, summonerData, playerStats);
+                    if (predictionResults.length > 0) {
+                        await this.sendPredictionResults(predictionResults, summonerData, playerStats);
                     }
                 } catch (error) {
-                    console.error('Error resolving bets:', error);
+                    console.error('Error resolving predictions:', error);
                 }
             }
             
@@ -690,13 +690,13 @@ class PlayerTracker {
         }
     }
 
-    async sendBettingResults(betResults, summonerData, playerStats) {
+    async sendPredictionResults(predictionResults, summonerData, playerStats) {
         try {
-            console.log(`📊 Sending betting results for ${betResults.length} bets`);
+            console.log(`📊 Sending prediction results for ${predictionResults.length} predictions`);
             
             // Group results by channel for efficient messaging
             const resultsByChannel = new Map();
-            betResults.forEach(result => {
+            predictionResults.forEach(result => {
                 if (!resultsByChannel.has(result.channelId)) {
                     resultsByChannel.set(result.channelId, []);
                 }
@@ -709,38 +709,38 @@ class PlayerTracker {
                     const channel = await this.discordClient.channels.fetch(channelId);
                     
                     // Create results summary
-                    const winners = channelResults.filter(r => r.won);
-                    const losers = channelResults.filter(r => !r.won);
+                    const correctPredictions = channelResults.filter(r => r.wasCorrect);
+                    const incorrectPredictions = channelResults.filter(r => !r.wasCorrect);
                     
                     const resultEmoji = playerStats.win ? '🎉' : '💔';
                     const outcomeText = playerStats.win ? 'VICTORY' : 'DEFEAT';
                     
-                    let resultText = `${resultEmoji} **BETTING RESULTS - ${outcomeText}**\n`;
+                    let resultText = `${resultEmoji} **PREDICTION RESULTS - ${outcomeText}**\n`;
                     resultText += `${summonerData.gameName}#${summonerData.tagLine} (${playerStats.championName})\n\n`;
                     
-                    if (winners.length > 0) {
-                        resultText += `🏆 **WINNERS:**\n`;
-                        for (const winner of winners) {
-                            resultText += `<@${winner.userId}> won ${winner.payout}💎 (bet ${winner.betAmount}💎 on ${winner.betOutcome.toUpperCase()})\n`;
+                    if (correctPredictions.length > 0) {
+                        resultText += `🎯 **CORRECT PREDICTIONS:**\n`;
+                        for (const correct of correctPredictions) {
+                            resultText += `<@${correct.userId}> ✅ Predicted ${correct.predictedOutcome.toUpperCase()}\n`;
                         }
                         resultText += '\n';
                     }
                     
-                    if (losers.length > 0) {
-                        resultText += `😢 **LOST BETS:**\n`;
-                        for (const loser of losers) {
-                            resultText += `<@${loser.userId}> lost ${loser.betAmount}💎 (bet on ${loser.betOutcome.toUpperCase()})\n`;
+                    if (incorrectPredictions.length > 0) {
+                        resultText += `❌ **INCORRECT PREDICTIONS:**\n`;
+                        for (const incorrect of incorrectPredictions) {
+                            resultText += `<@${incorrect.userId}> ❌ Predicted ${incorrect.predictedOutcome.toUpperCase()}\n`;
                         }
                     }
                     
                     await channel.send(resultText);
-                    console.log(`✅ Sent betting results to channel ${channelId}`);
+                    console.log(`✅ Sent prediction results to channel ${channelId}`);
                 } catch (error) {
-                    console.error(`Error sending betting results to channel ${channelId}:`, error);
+                    console.error(`Error sending prediction results to channel ${channelId}:`, error);
                 }
             }
         } catch (error) {
-            console.error('Error sending betting results:', error);
+            console.error('Error sending prediction results:', error);
         }
     }
 
