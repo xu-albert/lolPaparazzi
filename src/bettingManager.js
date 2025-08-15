@@ -401,11 +401,21 @@ class BettingManager {
             const champStats = trackedPlayer.championStats;
             const rankedStats = trackedPlayer.rankedStats;
             
-            const trackedPlayerInfo = 
-                `🏆 **${trackedPlayer.summoner.gameName}#${trackedPlayer.summoner.tagLine}** (${trackedPlayer.championName})\n` +
-                `📊 Champion Stats (Last ${champStats.gamesPlayed} ${trackedPlayer.championName} games):\n` +
-                `   • **Winrate:** ${champStats.winrate}% (${champStats.recentForm}) • **Avg KDA:** ${champStats.avgKDA} • **Avg CS/min:** ${champStats.avgCS}\n` +
-                `📈 **Overall Ranked:** ${rankedStats.winrate}% (${rankedStats.games}) | ${rankedStats.rank} ${rankedStats.lp} LP`;
+            let trackedPlayerInfo;
+            if (champStats.gamesPlayed === 0) {
+                // First time playing this champion in ranked
+                trackedPlayerInfo = 
+                    `🏆 **${trackedPlayer.summoner.gameName}#${trackedPlayer.summoner.tagLine}** (${trackedPlayer.championName})\n` +
+                    `🆕 **First game on ${trackedPlayer.championName}!** 🎯\n` +
+                    `📈 **Overall Ranked:** ${rankedStats.winrate}% (${rankedStats.games}) | ${rankedStats.rank} ${rankedStats.lp} LP`;
+            } else {
+                // Has played this champion before
+                trackedPlayerInfo = 
+                    `🏆 **${trackedPlayer.summoner.gameName}#${trackedPlayer.summoner.tagLine}** (${trackedPlayer.championName})\n` +
+                    `📊 Champion Stats (Last ${champStats.gamesPlayed} ${trackedPlayer.championName} games):\n` +
+                    `   • **Winrate:** ${champStats.winrate}% (${champStats.recentForm}) • **Avg KDA:** ${champStats.avgKDA} • **Avg CS/min:** ${champStats.avgCS}\n` +
+                    `📈 **Overall Ranked:** ${rankedStats.winrate}% (${rankedStats.games}) | ${rankedStats.rank} ${rankedStats.lp} LP`;
+            }
 
             // Format team compositions
             const blueTeamDisplay = teams.blue.map(player => {
