@@ -85,6 +85,18 @@ class PlayerTracker {
             const currentGame = await this.riotApi.getCurrentGame(summoner.puuid);
             const now = new Date();
             
+            // Debug logging for game detection
+            if (currentGame) {
+                console.log(`🎮 Game detected: ID=${currentGame.gameId}, Queue=${currentGame.gameQueueConfigId}, GameLength=${currentGame.gameLength || 'unknown'}s`);
+                if (this.riotApi.isRankedSoloGame(currentGame)) {
+                    console.log(`✅ Ranked solo game confirmed (Queue 420)`);
+                } else {
+                    console.log(`❌ Not ranked solo - Queue ${currentGame.gameQueueConfigId} (need 420)`);
+                }
+            } else {
+                console.log(`❌ No active game found for ${summoner.gameName}#${summoner.tagLine}`);
+            }
+            
             if (currentGame && this.riotApi.isRankedSoloGame(currentGame)) {
                 // Player is in a ranked game
                 this.playerSession.lastGameCheck = now;
