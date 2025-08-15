@@ -130,7 +130,15 @@ class BettingManager {
         } catch (error) {
             await this.persistence.pool.query('ROLLBACK');
             console.error('Error placing bet:', error);
-            return { success: false, message: 'Failed to place bet' };
+            
+            // Provide more specific error messages
+            if (error.message?.includes('foreign key') || error.message?.includes('constraint')) {
+                return { success: false, message: 'Game no longer exists for betting!' };
+            } else if (error.message?.includes('connection') || error.message?.includes('pool')) {
+                return { success: false, message: 'Database connection issue. Please try again!' };
+            } else {
+                return { success: false, message: 'Unable to place bet. Please try again!' };
+            }
         }
     }
 
@@ -373,6 +381,15 @@ class BettingManager {
 
         // Remove from active panels
         this.activeBettingPanels.delete(gameId);
+    }
+
+    getBettingTimeRemaining(gameId) {
+        const panelInfo = this.activeBettingPanels.get(gameId);
+        if (!panelInfo) return 0;
+
+        const elapsed = Date.now() - panelInfo.startTime;
+        const remaining = Math.max(0, (4 * 60 * 1000) - elapsed);
+        return Math.floor(remaining / 1000); // Return seconds
     }
 
 

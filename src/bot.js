@@ -104,8 +104,21 @@ async function handleBettingButtons(interaction) {
     } catch (error) {
         console.error('Error handling betting button:', error);
         
+        // Provide more specific error messages based on the error type
+        let errorContent = '❌ Unable to process betting action!';
+        
+        if (error.message?.includes('game')) {
+            errorContent = '🎮 Game is no longer available for betting!';
+        } else if (error.message?.includes('database') || error.message?.includes('pool')) {
+            errorContent = '💾 Database temporarily unavailable. Please try again!';
+        } else if (error.message?.includes('network') || error.message?.includes('fetch')) {
+            errorContent = '🌐 Connection issue. Please try again in a moment!';
+        } else if (error.message?.includes('timeout')) {
+            errorContent = '⏰ Request timed out. Please try again!';
+        }
+        
         const errorMessage = {
-            content: 'There was an error processing your bet!',
+            content: errorContent,
             ephemeral: true
         };
         
