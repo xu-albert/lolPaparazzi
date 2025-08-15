@@ -489,22 +489,32 @@ class BettingManager {
                     `📈 **Overall Ranked:** ${rankedStats.winrate}% (${rankedStats.games}) | ${rankedStats.rank} ${rankedStats.lp} LP`;
             }
 
-            // Format team compositions
-            const blueTeamDisplay = teams.blue.map(player => {
-                if (player.isTracked) {
-                    return `**${player.summonerName}** • ${player.championName} • **${player.rankedStats.winrate}%** ⭐`;
-                } else {
-                    return `${player.summonerName} • ${player.championName} • ${player.rankedStats.winrate}%`;
-                }
-            }).join('\n');
+            // Format team compositions with role indicators
+            const getRoleEmoji = (role) => {
+                const roleEmojis = {
+                    'TOP': '🛡️',
+                    'JUNGLE': '🌳', 
+                    'MIDDLE': '⚡',
+                    'BOTTOM': '🏹',
+                    'UTILITY': '💚'
+                };
+                return roleEmojis[role] || '❓';
+            };
 
-            const redTeamDisplay = teams.red.map(player => {
+            const formatPlayer = (player) => {
+                const role = player.teamPosition || '';
+                const roleEmoji = getRoleEmoji(role);
+                const roleText = role ? `${roleEmoji} ` : '';
+                
                 if (player.isTracked) {
-                    return `**${player.summonerName}** • ${player.championName} • **${player.rankedStats.winrate}%** ⭐`;
+                    return `${roleText}**${player.summonerName}** • ${player.championName} • **${player.rankedStats.winrate}%** ⭐`;
                 } else {
-                    return `${player.summonerName} • ${player.championName} • ${player.rankedStats.winrate}%`;
+                    return `${roleText}${player.summonerName} • ${player.championName} • ${player.rankedStats.winrate}%`;
                 }
-            }).join('\n');
+            };
+
+            const blueTeamDisplay = teams.blue.map(formatPlayer).join('\n');
+            const redTeamDisplay = teams.red.map(formatPlayer).join('\n');
 
             // Get champion image for tracked player
             const championImageUrl = `https://ddragon.leagueoflegends.com/cdn/14.1.1/img/champion/${trackedPlayer.championName.replace(/[^a-zA-Z0-9]/g, '')}.png`;

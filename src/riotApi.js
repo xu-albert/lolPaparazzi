@@ -585,9 +585,24 @@ class RiotAPI {
                 })
             );
             
-            // Separate teams
-            const blueTeam = allPlayers.filter(p => p.teamId === 100);
-            const redTeam = allPlayers.filter(p => p.teamId === 200);
+            // Separate teams and sort by role
+            const roleOrder = { 'TOP': 0, 'JUNGLE': 1, 'MIDDLE': 2, 'BOTTOM': 3, 'UTILITY': 4 };
+            
+            const sortTeamByRole = (team) => {
+                return team.sort((a, b) => {
+                    // Use teamPosition if available (newer API), fallback to spell1Id detection
+                    const roleA = a.teamPosition || this.detectRoleBySpells(a.spell1Id, a.spell2Id);
+                    const roleB = b.teamPosition || this.detectRoleBySpells(b.spell1Id, b.spell2Id);
+                    
+                    const orderA = roleOrder[roleA] !== undefined ? roleOrder[roleA] : 5;
+                    const orderB = roleOrder[roleB] !== undefined ? roleOrder[roleB] : 5;
+                    
+                    return orderA - orderB;
+                });
+            };
+            
+            const blueTeam = sortTeamByRole(allPlayers.filter(p => p.teamId === 100));
+            const redTeam = sortTeamByRole(allPlayers.filter(p => p.teamId === 200));
             
             return {
                 gameId: currentGame.gameId,
@@ -610,6 +625,39 @@ class RiotAPI {
             console.error('Error analyzing current game:', error);
             throw error;
         }
+    }
+
+    // Helper method to detect role by summoner spells when teamPosition is not available
+    detectRoleBySpells(spell1Id, spell2Id) {
+        const spells = [spell1Id, spell2Id].sort((a, b) => a - b);
+        
+        // Smite (11) = Jungle
+        if (spells.includes(11)) {
+            return 'JUNGLE';
+        }
+        
+        // Flash (4) + Teleport (12) = Top (most common)
+        if (spells.includes(4) && spells.includes(12)) {
+            return 'TOP';
+        }
+        
+        // Flash (4) + Ignite (14) = Mid (most common)
+        if (spells.includes(4) && spells.includes(14)) {
+            return 'MIDDLE';
+        }
+        
+        // Flash (4) + Heal (7) = ADC
+        if (spells.includes(4) && spells.includes(7)) {
+            return 'BOTTOM';
+        }
+        
+        // Flash (4) + Exhaust (3) or Flash + Ignite (but not already assigned to mid) = Support
+        if (spells.includes(4) && (spells.includes(3) || spells.includes(6))) {
+            return 'UTILITY';
+        }
+        
+        // Default fallback - return empty to maintain original order
+        return '';
     }
 }
 
