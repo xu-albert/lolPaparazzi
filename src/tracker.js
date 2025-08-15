@@ -308,18 +308,36 @@ class PlayerTracker {
                 console.log(`📊 Session starting: ${soloRank.leaguePoints} LP (${displayRank})`);
             }
 
-            // Find the Paparazzi role and ping it (only once per session)
-            let content = '';
-            const guild = channel.guild;
-            if (guild) {
-                const paparazziRole = guild.roles.cache.find(role => role.name === 'Paparazzi');
-                if (paparazziRole) {
-                    content = `<@&${paparazziRole.id}>`;
-                    console.log('Pinging Paparazzi role for session start');
-                }
+            // First, send session start notification (without ping)
+            const isFirstGameOfSession = session && session.gameCount === 1;
+            if (isFirstGameOfSession) {
+                const sessionEmbed = {
+                    color: 0x00ff00,
+                    title: '🎮 Gaming Session Started!',
+                    description: `**${summoner.gameName}#${summoner.tagLine}** started a ranked solo queue session!`,
+                    fields: [
+                        {
+                            name: 'Current Rank',
+                            value: formattedRank,
+                            inline: true
+                        },
+                        {
+                            name: 'Session Start',
+                            value: `<t:${Math.floor((session.sessionStartTime || new Date()).getTime() / 1000)}:t>`,
+                            inline: true
+                        }
+                    ],
+                    timestamp: new Date(),
+                    footer: {
+                        text: 'LoL Paparazzi'
+                    }
+                };
+                
+                await channel.send({ embeds: [sessionEmbed] });
+                console.log(`📢 Session start notification sent for ${summoner.gameName}#${summoner.tagLine}`);
             }
 
-            // Create and send betting panel if betting manager is available
+            // Then, create and send prediction panel if betting manager is available
             if (this.bettingManager && gameData) {
                 console.log('🎯 Creating prediction panel for new game...');
                 
@@ -369,58 +387,10 @@ class PlayerTracker {
                     console.log(`✅ Prediction panel created and saved for game ${gameData.gameId}`);
                 } catch (error) {
                     console.error('Error creating prediction panel:', error);
-                    
-                    // Send basic session start notification as fallback
-                    const basicEmbed = {
-                        color: 0x00ff00,
-                        title: '🎮 Gaming Session Started!',
-                        description: `**${summoner.gameName}#${summoner.tagLine}** started a ranked solo queue session!`,
-                        fields: [
-                            {
-                                name: 'Current Rank',
-                                value: formattedRank,
-                                inline: true
-                            },
-                            {
-                                name: 'Session Start',
-                                value: `<t:${Math.floor(this.playerSession.sessionStartTime.getTime() / 1000)}:t>`,
-                                inline: true
-                            }
-                        ],
-                        timestamp: new Date(),
-                        footer: {
-                            text: 'LoL Paparazzi'
-                        }
-                    };
-                    
-                    await channel.send({ content, embeds: [basicEmbed] });
+                    // Session start notification already sent above, no fallback needed
                 }
-            } else {
-                // Send basic session start notification if no betting manager
-                const basicEmbed = {
-                    color: 0x00ff00,
-                    title: '🎮 Gaming Session Started!',
-                    description: `**${summoner.gameName}#${summoner.tagLine}** started a ranked solo queue session!`,
-                    fields: [
-                        {
-                            name: 'Current Rank',
-                            value: formattedRank,
-                            inline: true
-                        },
-                        {
-                            name: 'Session Start',
-                            value: `<t:${Math.floor(this.playerSession.sessionStartTime.getTime() / 1000)}:t>`,
-                            inline: true
-                        }
-                    ],
-                    timestamp: new Date(),
-                    footer: {
-                        text: 'LoL Paparazzi'
-                    }
-                };
-                
-                await channel.send({ content, embeds: [basicEmbed] });
             }
+            // Session start notification already sent above when betting manager exists
         } catch (error) {
             console.error('Error sending session start notification:', error);
         }
@@ -436,29 +406,29 @@ class PlayerTracker {
         }
     }
 
-    async sendComprehensiveSessionSummary(summoner, channel) {
+    async sendComprehensiveSessionSummary(summoner, channel, session) {
         try {
             // Calculate session span using refined timing (first game start to last game end)
             let sessionSpanMinutes = 0;
             let durationText = 'No games tracked';
             
-            if (this.playerSession.firstGameStartTime && this.playerSession.lastGameEndTime) {
-                sessionSpanMinutes = Math.floor((this.playerSession.lastGameEndTime - this.playerSession.firstGameStartTime) / 1000 / 60);
+            if (session && session.firstGameStartTime && session.lastGameEndTime) {
+                sessionSpanMinutes = Math.floor((session.lastGameEndTime - session.firstGameStartTime) / 1000 / 60);
                 const hours = Math.floor(sessionSpanMinutes / 60);
                 const minutes = sessionSpanMinutes % 60;
                 durationText = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
-                console.log(`📊 Refined session duration: ${durationText} (from ${this.playerSession.firstGameStartTime.toISOString()} to ${this.playerSession.lastGameEndTime.toISOString()})`);
+                console.log(`📊 Refined session duration: ${durationText} (from ${session.firstGameStartTime.toISOString()} to ${session.lastGameEndTime.toISOString()})`);
             }
             
-            const stats = this.playerSession.sessionStats;
+            const stats = session ? session.sessionStats : { wins: 0, losses: 0, champions: {} };
             const totalGames = stats.wins + stats.losses;
-            const casualGames = this.playerSession.nonRankedGames || 0;
+            const casualGames = session ? (session.nonRankedGames || 0) : 0;
             const winrate = totalGames > 0 ? Math.round((stats.wins / totalGames) * 100) : 0;
             
             // Calculate LP change - show both gains and losses accurately
             let lpSummary = '';
-            if (this.playerSession.sessionStartLP !== null && this.playerSession.currentLP !== null) {
-                const totalLPChange = this.playerSession.currentLP - this.playerSession.sessionStartLP;
+            if (session && session.sessionStartLP !== null && session.currentLP !== null) {
+                const totalLPChange = session.currentLP - session.sessionStartLP;
                 
                 if (totalLPChange > 0) {
                     lpSummary = `📈 +${totalLPChange} LP gained`;
@@ -529,7 +499,7 @@ class PlayerTracker {
             }
             
             await channel.send({ embeds: [embed] });
-            console.log(`📊 Sent comprehensive session summary: ${stats.wins}W-${stats.losses}L, ${stats.lpGained > 0 ? '+' : ''}${stats.lpGained} LP`);
+            console.log(`📊 Sent comprehensive session summary: ${stats.wins}W-${stats.losses}L`);
             
         } catch (error) {
             console.error('Error sending comprehensive session summary:', error);
