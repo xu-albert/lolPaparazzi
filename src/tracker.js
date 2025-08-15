@@ -105,7 +105,10 @@ class PlayerTracker {
                 const gameId = currentGame.gameId;
                 const isNewGame = gameId !== this.playerSession.currentGameId;
                 
+                console.log(`🔍 Session state: inSession=${this.playerSession.inSession}, currentGameId=${this.playerSession.currentGameId}, newGameId=${gameId}, isNewGame=${isNewGame}`);
+                
                 if (!this.playerSession.inSession) {
+                    console.log(`🚀 Starting new session for game ${gameId}`);
                     // Start new session
                     this.playerSession.inSession = true;
                     this.playerSession.sessionStartTime = now;
@@ -132,6 +135,7 @@ class PlayerTracker {
                     // Switch to longer polling interval during session
                     this.scheduleNextCheck();
                 } else if (isNewGame) {
+                    console.log(`🎮 New game detected for existing session: ${gameId}`);
                     // Already in session, but this is a new game
                     this.playerSession.gameCount++;
                     this.playerSession.currentGameId = gameId;
@@ -141,6 +145,8 @@ class PlayerTracker {
                     if (sessionId && !this.playerSession.id) {
                         this.playerSession.id = sessionId;
                     }
+                } else {
+                    console.log(`⏸️  Same game continues: ${gameId} (no action taken)`);
                 }
                 // If same game, don't increment counter
             } else if (currentGame && this.riotApi.isCasualGame(currentGame) && this.playerSession.inSession) {
