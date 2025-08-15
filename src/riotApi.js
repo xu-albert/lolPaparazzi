@@ -572,11 +572,15 @@ class RiotAPI {
                     const championName = await this.getChampionNameById(participant.championId);
                     const playerRankedStats = await this.getPlayerRankedStats(participant.puuid);
                     
+                    // Extract summoner name from riotId field
+                    const summonerName = participant.riotId || 'Unknown Player';
+                    
                     return {
                         ...participant,
                         championName,
                         rankedStats: playerRankedStats,
-                        isTracked: participant.puuid === trackedSummoner.puuid
+                        isTracked: participant.puuid === trackedSummoner.puuid,
+                        summonerName
                     };
                 })
             );

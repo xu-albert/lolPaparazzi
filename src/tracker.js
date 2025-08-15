@@ -252,8 +252,20 @@ class PlayerTracker {
                     const gameAnalysis = await this.riotApi.analyzeCurrentGame(summoner, gameData);
                     const bettingPanel = await this.bettingManager.createEnhancedBettingPanel(gameAnalysis);
                     
-                    // Send the betting panel
-                    const message = await channel.send(bettingPanel);
+                    // Send the betting panel with Paparazzi role ping
+                    let content = '🎰 **BETTING IS NOW LIVE!** 🎰';
+                    const guild = channel.guild;
+                    if (guild) {
+                        const paparazziRole = guild.roles.cache.find(role => role.name === 'Paparazzi');
+                        if (paparazziRole) {
+                            content = `<@&${paparazziRole.id}> ${content}`;
+                        }
+                    }
+                    
+                    const message = await channel.send({
+                        content,
+                        ...bettingPanel
+                    });
                     
                     // Track the betting panel for timer updates
                     this.bettingManager.setBettingPanel(
