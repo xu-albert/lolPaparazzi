@@ -375,22 +375,6 @@ class BettingManager {
         this.activeBettingPanels.delete(gameId);
     }
 
-    getBettingTimeRemaining(gameId) {
-        const panelInfo = this.activeBettingPanels.get(gameId);
-        if (!panelInfo) return 0;
-
-        const elapsed = Date.now() - panelInfo.startTime;
-        const remaining = Math.max(0, (4 * 60 * 1000) - elapsed);
-        return Math.floor(remaining / 1000); // Return seconds
-    }
-
-    formatTimeRemaining(seconds) {
-        if (seconds <= 0) return 'CLOSED';
-        
-        const minutes = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${minutes}:${secs.toString().padStart(2, '0')}`;
-    }
 
     // Enhanced betting panel creation with team displays and stats
     async createEnhancedBettingPanel(gameAnalysis) {
@@ -437,7 +421,7 @@ class BettingManager {
             const embed = new EmbedBuilder()
                 .setColor(0x00ff00)
                 .setTitle('🎮 LIVE RANKED GAME - BETTING OPEN 🎮')
-                .setDescription(`${trackedPlayer.summoner.gameName}#${trackedPlayer.summoner.tagLine} vs Enemy Team | ⏱️ Betting closes in: 4:00`)
+                .setDescription(`${trackedPlayer.summoner.gameName}#${trackedPlayer.summoner.tagLine} vs Enemy Team | ⏱️ Betting closes <t:${Math.floor(Date.now() / 1000) + 240}:R>`)
                 .addFields(
                     {
                         name: '🏆 OUR PLAYER CHAMPION STATS',
@@ -496,39 +480,6 @@ class BettingManager {
         }
     }
 
-    async updateBettingPanelTimer(channelId, messageId, gameId) {
-        try {
-            const timeRemaining = this.getBettingTimeRemaining(gameId);
-            if (timeRemaining <= 0) {
-                // Time's up, disable buttons
-                await this.disableBettingButtons(channelId, messageId, gameId);
-                return;
-            }
-
-            // Update the embed description with remaining time
-            const timeText = this.formatTimeRemaining(timeRemaining);
-            
-            // Note: We could fetch and update the message here, but it might be rate-limited
-            // For now, we'll just track the time internally and disable buttons when time expires
-            
-        } catch (error) {
-            console.error('Error updating betting panel timer:', error);
-        }
-    }
-
-    async disableBettingButtons(channelId, messageId, gameId) {
-        try {
-            // Create disabled button rows
-            const disabledButtons = this.createBettingButtons(gameId, true);
-            
-            // This would require the Discord client to edit the message
-            // We'll implement this in the integration phase
-            console.log(`🚫 Betting window closed for game ${gameId}`);
-            
-        } catch (error) {
-            console.error('Error disabling betting buttons:', error);
-        }
-    }
 
     formatPlayerForDisplay(player, isTracked = false) {
         const winrate = `${player.rankedStats.winrate}%`;
