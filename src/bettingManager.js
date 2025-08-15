@@ -404,24 +404,28 @@ class BettingManager {
             // Format team compositions
             const blueTeamDisplay = teams.blue.map(player => {
                 if (player.isTracked) {
-                    return `**${player.summonerName}** (${player.championName}) **${player.rankedStats.winrate}%** ⭐`;
+                    return `**${player.summonerName}** • ${player.championName} • **${player.rankedStats.winrate}%** ⭐`;
                 } else {
-                    return `${player.summonerName} (${player.championName}) ${player.rankedStats.winrate}%`;
+                    return `${player.summonerName} • ${player.championName} • ${player.rankedStats.winrate}%`;
                 }
             }).join('\n');
 
             const redTeamDisplay = teams.red.map(player => {
                 if (player.isTracked) {
-                    return `**${player.summonerName}** (${player.championName}) **${player.rankedStats.winrate}%** ⭐`;
+                    return `**${player.summonerName}** • ${player.championName} • **${player.rankedStats.winrate}%** ⭐`;
                 } else {
-                    return `${player.summonerName} (${player.championName}) ${player.rankedStats.winrate}%`;
+                    return `${player.summonerName} • ${player.championName} • ${player.rankedStats.winrate}%`;
                 }
             }).join('\n');
+
+            // Get champion image for tracked player
+            const championImageUrl = `https://ddragon.leagueoflegends.com/cdn/14.1.1/img/champion/${trackedPlayer.championName.replace(/[^a-zA-Z0-9]/g, '')}.png`;
 
             const embed = new EmbedBuilder()
                 .setColor(0x00ff00)
                 .setTitle('🎮 LIVE RANKED GAME - BETTING OPEN 🎮')
                 .setDescription(`${trackedPlayer.summoner.gameName}#${trackedPlayer.summoner.tagLine} vs Enemy Team | ⏱️ Betting closes <t:${Math.floor(Date.now() / 1000) + 240}:R>`)
+                .setThumbnail(championImageUrl)
                 .addFields(
                     {
                         name: '🏆 OUR PLAYER CHAMPION STATS',
