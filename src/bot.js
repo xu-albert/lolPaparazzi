@@ -337,6 +337,12 @@ setTimeout(async () => {
     await distributeDailyCredits();
 }, 5000); // Wait 5 seconds after startup
 
+// Clean up old betting panels on startup and periodically
+bettingManager.persistence.cleanupOldBettingPanels();
+setInterval(() => {
+    bettingManager.persistence.cleanupOldBettingPanels();
+}, 30 * 60 * 1000); // Clean up every 30 minutes
+
 process.on('SIGINT', () => {
     console.log('\n🛑 Shutting down...');
     tracker.stopTracking();

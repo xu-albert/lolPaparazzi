@@ -97,13 +97,44 @@ class BettingManager {
 
             // Check if user already has a bet on this game
             const existingBet = await this.persistence.pool.query(`
-                SELECT id FROM active_bets 
+                SELECT id, bet_amount FROM active_bets 
                 WHERE user_id = $1 AND game_id = $2 AND status = 'active'
             `, [userId, gameId]);
 
             if (existingBet.rows.length > 0) {
-                await this.persistence.pool.query('ROLLBACK');
-                return { success: false, message: 'You already have a bet on this game!' };
+                // Update existing bet instead of rejecting
+                const oldBetAmount = existingBet.rows[0].bet_amount;
+                const creditDiff = betAmount - oldBetAmount;
+                
+                // Check if user has enough credits for the difference
+                if (creditDiff > 0 && userCredits.balance < creditDiff) {
+                    await this.persistence.pool.query('ROLLBACK');
+                    return { success: false, message: `Need ${creditDiff} more credits to update bet! You have ${userCredits.balance}💎` };
+                }
+                
+                // Update the bet
+                await this.persistence.pool.query(`
+                    UPDATE active_bets 
+                    SET bet_amount = $3, bet_outcome = $4, created_at = CURRENT_TIMESTAMP
+                    WHERE user_id = $1 AND game_id = $2
+                `, [userId, gameId, betAmount, betOutcome]);
+                
+                // Update user balance with the difference
+                if (creditDiff !== 0) {
+                    await this.persistence.pool.query(`
+                        UPDATE user_credits 
+                        SET balance = balance - $3, updated_at = CURRENT_TIMESTAMP
+                        WHERE user_id = $1 AND guild_id = $2
+                    `, [userId, guildId, creditDiff]);
+                }
+
+                await this.persistence.pool.query('COMMIT');
+
+                return { 
+                    success: true, 
+                    message: `Bet updated! ${betAmount}💎 on ${betOutcome.toUpperCase()} (${creditDiff > 0 ? 'added ' + creditDiff : creditDiff < 0 ? 'refunded ' + Math.abs(creditDiff) : 'no change'})`,
+                    newBalance: userCredits.balance - creditDiff
+                };
             }
 
             // Deduct credits and place bet
@@ -410,10 +441,31 @@ class BettingManager {
     }
 
 
+    // Check if betting panel should be created (prevents duplicates)
+    async shouldCreateBettingPanel(gameId) {
+        try {
+            // Check if we already sent a betting panel for this game
+            const panelExists = await this.persistence.checkBettingPanelExists(gameId);
+            if (panelExists) {
+                console.log(`🎰 Betting panel already exists for game ${gameId} - skipping duplicate`);
+                return false;
+            }
+            return true;
+        } catch (error) {
+            console.error('Error checking betting panel:', error);
+            return true; // Default to creating panel if check fails
+        }
+    }
+
     // Enhanced betting panel creation with team displays and stats
     async createEnhancedBettingPanel(gameAnalysis) {
         try {
             const { trackedPlayer, teams, gameId, gameStartTime } = gameAnalysis;
+
+            // Check if we should create this panel (prevent duplicates)
+            if (!await this.shouldCreateBettingPanel(gameId)) {
+                return null; // Skip panel creation
+            }
             
             // Format tracked player's champion stats
             const champStats = trackedPlayer.championStats;

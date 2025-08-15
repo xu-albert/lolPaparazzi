@@ -274,6 +274,12 @@ class PlayerTracker {
                     const gameAnalysis = await this.riotApi.analyzeCurrentGame(summoner, gameData);
                     const bettingPanel = await this.bettingManager.createEnhancedBettingPanel(gameAnalysis);
                     
+                    // Check if panel was created (null means duplicate was prevented)
+                    if (!bettingPanel) {
+                        console.log(`🎰 Betting panel already exists for game ${gameData.gameId} - skipping`);
+                        return; // Skip sending duplicate panel
+                    }
+                    
                     // Send the betting panel with Paparazzi role ping
                     let content = '🎰 **BETTING IS NOW LIVE!** 🎰';
                     const guild = channel.guild;
@@ -289,6 +295,15 @@ class PlayerTracker {
                         ...bettingPanel
                     });
                     
+                    // Save betting panel to database (prevents future duplicates)
+                    await this.persistence.saveBettingPanel(
+                        gameData.gameId,
+                        message.id,
+                        channel.id,
+                        summoner.puuid,
+                        gameData.gameStartTime ? new Date(gameData.gameStartTime) : new Date()
+                    );
+                    
                     // Track the betting panel for timer updates
                     this.bettingManager.setBettingPanel(
                         gameData.gameId, 
@@ -297,7 +312,7 @@ class PlayerTracker {
                         Date.now()
                     );
                     
-                    console.log(`✅ Betting panel created for game ${gameData.gameId}`);
+                    console.log(`✅ Betting panel created and saved for game ${gameData.gameId}`);
                 } catch (error) {
                     console.error('Error creating betting panel:', error);
                     

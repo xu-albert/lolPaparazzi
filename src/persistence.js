@@ -188,6 +188,20 @@ class PersistenceManager {
             `);
             console.log('✅ Active bets table initialized');
             
+            // Create betting panels table to prevent duplicates
+            await this.pool.query(`
+                CREATE TABLE IF NOT EXISTS betting_panels (
+                    id SERIAL PRIMARY KEY,
+                    game_id VARCHAR(255) NOT NULL UNIQUE,
+                    message_id VARCHAR(255) NOT NULL,
+                    channel_id VARCHAR(255) NOT NULL,
+                    player_puuid VARCHAR(255) NOT NULL,
+                    sent_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    game_start_time TIMESTAMP WITH TIME ZONE
+                )
+            `);
+            console.log('✅ Betting panels table initialized');
+            
             // Create bet history table
             await this.pool.query(`
                 CREATE TABLE IF NOT EXISTS bet_history (
@@ -742,6 +756,58 @@ class PersistenceManager {
             console.log('🔌 Database connection closed');
         } catch (error) {
             console.error('❌ Error closing database:', error.message);
+        }
+    }
+
+    // Betting panel management methods
+    async saveBettingPanel(gameId, messageId, channelId, playerPuuid, gameStartTime) {
+        try {
+            if (!this.databaseAvailable) return null;
+
+            const result = await this.pool.query(`
+                INSERT INTO betting_panels (game_id, message_id, channel_id, player_puuid, game_start_time)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (game_id) DO NOTHING
+                RETURNING id
+            `, [gameId, messageId, channelId, playerPuuid, gameStartTime]);
+
+            return result.rows.length > 0 ? result.rows[0].id : null;
+        } catch (error) {
+            console.error('Error saving betting panel:', error);
+            return null;
+        }
+    }
+
+    async checkBettingPanelExists(gameId) {
+        try {
+            if (!this.databaseAvailable) return false;
+
+            const result = await this.pool.query(`
+                SELECT id FROM betting_panels WHERE game_id = $1
+            `, [gameId]);
+
+            return result.rows.length > 0;
+        } catch (error) {
+            console.error('Error checking betting panel:', error);
+            return false;
+        }
+    }
+
+    async cleanupOldBettingPanels() {
+        try {
+            if (!this.databaseAvailable) return;
+
+            // Clean up betting panels older than 2 hours
+            const result = await this.pool.query(`
+                DELETE FROM betting_panels 
+                WHERE sent_at < NOW() - INTERVAL '2 hours'
+            `);
+
+            if (result.rowCount > 0) {
+                console.log(`🧹 Cleaned up ${result.rowCount} old betting panels`);
+            }
+        } catch (error) {
+            console.error('Error cleaning up betting panels:', error);
         }
     }
 }
