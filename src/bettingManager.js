@@ -351,6 +351,8 @@ class BettingManager {
 
     // Store betting panel info for later updates
     setBettingPanel(gameId, messageId, channelId, startTime) {
+        console.log(`🎰 Setting betting panel for game ${gameId} with 4-minute timer`);
+        
         this.activeBettingPanels.set(gameId, {
             messageId,
             channelId,
@@ -360,6 +362,7 @@ class BettingManager {
 
         // Set 4-minute timeout to close betting
         const timeout = setTimeout(async () => {
+            console.log(`⏰ Betting timer expired for game ${gameId}`);
             await this.closeBettingWindow(gameId);
         }, 4 * 60 * 1000);
 
@@ -385,11 +388,17 @@ class BettingManager {
 
     getBettingTimeRemaining(gameId) {
         const panelInfo = this.activeBettingPanels.get(gameId);
-        if (!panelInfo) return 0;
+        if (!panelInfo) {
+            console.log(`⚠️ No betting panel info found for game ${gameId}`);
+            return 0;
+        }
 
         const elapsed = Date.now() - panelInfo.startTime;
         const remaining = Math.max(0, (4 * 60 * 1000) - elapsed);
-        return Math.floor(remaining / 1000); // Return seconds
+        const remainingSeconds = Math.floor(remaining / 1000);
+        
+        console.log(`⏰ Betting timer check for game ${gameId}: ${remainingSeconds}s remaining (elapsed: ${Math.floor(elapsed/1000)}s)`);
+        return remainingSeconds;
     }
 
 
