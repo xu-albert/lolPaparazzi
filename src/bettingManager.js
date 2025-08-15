@@ -372,11 +372,6 @@ class BettingManager {
                 .setCustomId(`leaderboard_${gameId}`)
                 .setLabel('🏅 Leaderboard')
                 .setStyle(ButtonStyle.Secondary)
-                .setDisabled(disabled),
-            new ButtonBuilder()
-                .setCustomId(`stats_${gameId}`)
-                .setLabel('📈 Game Stats')
-                .setStyle(ButtonStyle.Secondary)
                 .setDisabled(disabled)
         );
 
@@ -595,32 +590,6 @@ class BettingManager {
         }
     }
 
-    // Create stats modal content for enhanced display
-    createStatsModalContent(gameAnalysis) {
-        const { trackedPlayer, teams } = gameAnalysis;
-        const champStats = trackedPlayer.championStats;
-        
-        let content = `**📊 DETAILED GAME ANALYSIS**\n\n`;
-        content += `**🏆 ${trackedPlayer.summoner.gameName}#${trackedPlayer.summoner.tagLine}**\n`;
-        content += `Champion: ${trackedPlayer.championName}\n`;
-        content += `Champion Winrate: ${champStats.winrate}% (${champStats.gamesPlayed} games)\n`;
-        content += `Avg KDA: ${champStats.avgKDA} | Avg CS/min: ${champStats.avgCS}\n`;
-        content += `Recent Form: ${champStats.recentForm}\n\n`;
-        
-        content += `**⚔️ TEAM ANALYSIS**\n`;
-        content += `🔵 **Blue Team Average WR:** ${this.calculateTeamWinrate(teams.blue)}%\n`;
-        content += `🔴 **Red Team Average WR:** ${this.calculateTeamWinrate(teams.red)}%\n\n`;
-        
-        content += `**🎯 BETTING TIPS**\n`;
-        if (champStats.winrate >= 70) {
-            content += `• High champion winrate suggests comfort pick\n`;
-        }
-        if (champStats.avgKDA > 2.5) {
-            content += `• Strong KDA average indicates good performance\n`;
-        }
-        
-        return content;
-    }
 
     calculateTeamWinrate(team) {
         const totalWinrate = team.reduce((sum, player) => sum + player.rankedStats.winrate, 0);

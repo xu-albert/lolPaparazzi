@@ -96,9 +96,6 @@ async function handleBettingButtons(interaction) {
         } else if (action === 'leaderboard') {
             const gameId = parseInt(parts[1]);
             await handleLeaderboardDisplay(interaction, gameId);
-        } else if (action === 'stats') {
-            const gameId = parseInt(parts[1]);
-            await handleStatsDisplay(interaction, gameId);
         }
     } catch (error) {
         console.error('Error handling prediction button:', error);
@@ -245,66 +242,6 @@ async function handleLeaderboardDisplay(interaction, gameId) {
     }
 }
 
-async function handleStatsDisplay(interaction, gameId) {
-    try {
-        // Get current game analysis if available
-        const channelId = interaction.channel.id;
-        const playerSession = tracker.getSessionForChannel(channelId);
-        if (!playerSession || !playerSession.currentGameId || playerSession.currentGameId !== gameId) {
-            return await interaction.reply({
-                content: '❌ This game is no longer active!',
-                ephemeral: true
-            });
-        }
-
-        // Get summoner and current game data
-        const summoner = await riotApi.getSummonerByName(playerSession.originalInput);
-        const currentGame = await riotApi.getCurrentGame(summoner.puuid, true);
-        
-        if (!currentGame) {
-            return await interaction.reply({
-                content: '❌ No active game found!',
-                ephemeral: true
-            });
-        }
-
-        // Analyze current game for detailed stats
-        const gameAnalysis = await riotApi.analyzeCurrentGame(summoner, currentGame);
-        const statsContent = bettingManager.createStatsModalContent(gameAnalysis);
-        
-        // Check betting time remaining
-        const timeRemaining = bettingManager.getBettingTimeRemaining(gameId);
-        const timeText = bettingManager.formatTimeRemaining(timeRemaining);
-        
-        let response = `${statsContent}\n\n`;
-        response += `⏰ **Prediction Window:** ${timeText > 0 ? `${timeText} remaining` : 'CLOSED'}\n`;
-        
-        // Show user's active predictions for this game
-        const userId = interaction.user.id;
-        const activePredictions = await bettingManager.getUserActivePredictions(userId, interaction.channel.id);
-        const gamePredictions = activePredictions.filter(prediction => prediction.game_id === gameId);
-        
-        if (gamePredictions.length > 0) {
-            response += `\n🎯 **Your Predictions:**\n`;
-            gamePredictions.forEach(prediction => {
-                response += `• Predicting ${prediction.predicted_outcome.toUpperCase()}\n`;
-            });
-        } else {
-            response += `\n💡 **No predictions made** - Use the buttons above to predict!`;
-        }
-        
-        await interaction.reply({
-            content: response,
-            ephemeral: true
-        });
-    } catch (error) {
-        console.error('Error displaying game stats:', error);
-        await interaction.reply({
-            content: '❌ Error loading game statistics!',
-            ephemeral: true
-        });
-    }
-}
 
 // Prediction system - no daily distributions needed for accuracy tracking
 
