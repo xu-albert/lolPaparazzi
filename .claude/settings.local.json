@@ -15,7 +15,10 @@
       "Bash(git remote set-url:*)",
       "Bash(git credential-osxkeychain:*)",
       "Bash(git credential:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "WebSearch",
+      "WebFetch(domain:static.developer.riotgames.com)",
+      "Bash(grep:*)"
     ],
     "deny": []
   }

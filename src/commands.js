@@ -343,6 +343,87 @@ function createCommands(riotApi, tracker) {
                     await interaction.reply({ embeds: [embed] });
                 }
             }
+        },
+        {
+            data: new SlashCommandBuilder()
+                .setName('balance')
+                .setDescription('Check your betting credits and statistics'),
+            async execute(interaction) {
+                // This functionality is also available via the betting panel buttons
+                // but providing a slash command for convenience
+                try {
+                    const userId = interaction.user.id;
+                    const guildId = interaction.guild.id;
+                    
+                    // Access betting manager through tracker (since it's not directly passed to commands)
+                    const bettingManager = tracker.bettingManager;
+                    if (!bettingManager) {
+                        return await interaction.reply({
+                            content: '❌ Betting system is not available!',
+                            ephemeral: true
+                        });
+                    }
+                    
+                    const credits = await bettingManager.getUserCredits(userId, guildId);
+                    const activeBets = await bettingManager.getUserActiveBets(userId);
+                    
+                    const embed = new EmbedBuilder()
+                        .setColor(0x0099ff)
+                        .setTitle('💰 Your Betting Balance')
+                        .addFields(
+                            {
+                                name: '💎 Current Balance',
+                                value: `${credits.balance}💎`,
+                                inline: true
+                            },
+                            {
+                                name: '📊 Total Winnings',
+                                value: `${credits.totalWinnings || 0}💎`,
+                                inline: true
+                            },
+                            {
+                                name: '📉 Total Losses',
+                                value: `${credits.totalLosses || 0}💎`,
+                                inline: true
+                            }
+                        )
+                        .setTimestamp()
+                        .setFooter({ text: 'LoL Paparazzi Betting' });
+                    
+                    if (activeBets.length > 0) {
+                        const betsList = activeBets.map(bet => 
+                            `• ${bet.bet_amount}💎 on ${bet.bet_outcome.toUpperCase()}`
+                        ).join('\n');
+                        
+                        embed.addFields({
+                            name: `🎯 Active Bets (${activeBets.length})`,
+                            value: betsList,
+                            inline: false
+                        });
+                    }
+                    
+                    if (credits.canClaimDaily) {
+                        embed.addFields({
+                            name: '🎁 Daily Bonus',
+                            value: 'You can claim 100💎 daily bonus! Use betting panel buttons.',
+                            inline: false
+                        });
+                    }
+                    
+                    await interaction.reply({ embeds: [embed], ephemeral: true });
+                } catch (error) {
+                    console.error('Error in balance command:', error);
+                    
+                    const embed = new EmbedBuilder()
+                        .setColor(0xff0000)
+                        .setTitle('❌ Error')
+                        .setDescription('Could not retrieve your balance information.')
+                        .setTimestamp()
+                        .setFooter({ text: 'LoL Paparazzi' });
+
+                    await interaction.reply({ embeds: [embed], ephemeral: true });
+                }
+            }
         }
     ];
 }

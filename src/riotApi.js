@@ -434,6 +434,179 @@ class RiotAPI {
         // Final fallback
         return `Champion ${championId}`;
     }
+
+    // Enhanced game analysis methods for betting system
+    async getChampionSpecificStats(puuid, championName, gameCount = 10) {
+        try {
+            console.log(`📊 Getting champion stats for ${championName} (last ${gameCount} games)`);
+            
+            // Get recent match history
+            const matchIds = await this.getMatchHistory(puuid, null, 20); // Get more to filter by champion
+            const championGames = [];
+            
+            for (const matchId of matchIds) {
+                if (championGames.length >= gameCount) break;
+                
+                const matchData = await this.getMatchDetails(matchId);
+                if (!matchData) continue;
+                
+                const playerStats = await this.getPlayerMatchStats(matchData, puuid);
+                if (!playerStats) continue;
+                
+                // Only include games with the specified champion
+                if (playerStats.championName === championName && playerStats.queueType === 420) { // Ranked Solo
+                    championGames.push(playerStats);
+                }
+            }
+            
+            if (championGames.length === 0) {
+                return {
+                    gamesPlayed: 0,
+                    winrate: 0,
+                    avgKDA: 0,
+                    avgCS: 0,
+                    recentForm: 'No recent games'
+                };
+            }
+            
+            // Calculate statistics
+            const wins = championGames.filter(game => game.win).length;
+            const winrate = Math.round((wins / championGames.length) * 100);
+            
+            const totalKDA = championGames.reduce((sum, game) => {
+                const kda = game.kda === 'Perfect' ? 99 : parseFloat(game.kda);
+                return sum + kda;
+            }, 0);
+            const avgKDA = (totalKDA / championGames.length).toFixed(2);
+            
+            const totalCS = championGames.reduce((sum, game) => sum + parseFloat(game.csPerMin), 0);
+            const avgCS = (totalCS / championGames.length).toFixed(1);
+            
+            // Recent form (last 5 games)
+            const recentGames = championGames.slice(0, Math.min(5, championGames.length));
+            const recentWins = recentGames.filter(game => game.win).length;
+            const recentForm = `${recentWins}W-${recentGames.length - recentWins}L`;
+            
+            return {
+                gamesPlayed: championGames.length,
+                winrate,
+                avgKDA: avgKDA === '99.00' ? 'Perfect' : avgKDA,
+                avgCS,
+                recentForm: `${recentForm} in last ${recentGames.length}`
+            };
+        } catch (error) {
+            console.error('Error getting champion-specific stats:', error);
+            return {
+                gamesPlayed: 0,
+                winrate: 0,
+                avgKDA: 0,
+                avgCS: 0,
+                recentForm: 'Error loading stats'
+            };
+        }
+    }
+
+    async getPlayerRankedStats(puuid) {
+        try {
+            const rankInfo = await this.getRankInfo(puuid);
+            const soloRank = rankInfo.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
+            
+            if (!soloRank) {
+                return {
+                    rank: 'Unranked',
+                    winrate: 0,
+                    games: 0,
+                    lp: 0
+                };
+            }
+            
+            const totalGames = soloRank.wins + soloRank.losses;
+            const winrate = totalGames > 0 ? Math.round((soloRank.wins / totalGames) * 100) : 0;
+            
+            // Format rank display
+            const apexTiers = ['MASTER', 'GRANDMASTER', 'CHALLENGER'];
+            const rankDisplay = apexTiers.includes(soloRank.tier) 
+                ? soloRank.tier 
+                : `${soloRank.tier} ${soloRank.rank}`;
+            
+            return {
+                rank: rankDisplay,
+                winrate,
+                games: `${soloRank.wins}W-${soloRank.losses}L`,
+                lp: soloRank.leaguePoints
+            };
+        } catch (error) {
+            console.error('Error getting player ranked stats:', error);
+            return {
+                rank: 'Unknown',
+                winrate: 0,
+                games: '0W-0L',
+                lp: 0
+            };
+        }
+    }
+
+    async analyzeCurrentGame(trackedSummoner, currentGame) {
+        try {
+            console.log(`🔍 Analyzing current game for betting system...`);
+            
+            const participants = currentGame.participants;
+            const trackedParticipant = participants.find(p => p.puuid === trackedSummoner.puuid);
+            
+            if (!trackedParticipant) {
+                throw new Error('Tracked player not found in current game');
+            }
+            
+            // Get tracked player's champion
+            const trackedChampion = await this.getChampionNameById(trackedParticipant.championId);
+            
+            // Get detailed stats for tracked player
+            const [championStats, rankedStats] = await Promise.all([
+                this.getChampionSpecificStats(trackedSummoner.puuid, trackedChampion, 10),
+                this.getPlayerRankedStats(trackedSummoner.puuid)
+            ]);
+            
+            // Analyze all participants
+            const allPlayers = await Promise.all(
+                participants.map(async (participant) => {
+                    const championName = await this.getChampionNameById(participant.championId);
+                    const playerRankedStats = await this.getPlayerRankedStats(participant.puuid);
+                    
+                    return {
+                        ...participant,
+                        championName,
+                        rankedStats: playerRankedStats,
+                        isTracked: participant.puuid === trackedSummoner.puuid
+                    };
+                })
+            );
+            
+            // Separate teams
+            const blueTeam = allPlayers.filter(p => p.teamId === 100);
+            const redTeam = allPlayers.filter(p => p.teamId === 200);
+            
+            return {
+                gameId: currentGame.gameId,
+                gameStartTime: new Date(currentGame.gameStartTime),
+                trackedPlayer: {
+                    participant: trackedParticipant,
+                    championName: trackedChampion,
+                    championStats,
+                    rankedStats,
+                    summoner: trackedSummoner
+                },
+                teams: {
+                    blue: blueTeam,
+                    red: redTeam
+                },
+                allPlayers,
+                gameLength: currentGame.gameLength || 0
+            };
+        } catch (error) {
+            console.error('Error analyzing current game:', error);
+            throw error;
+        }
+    }
 }
 
 module.exports = RiotAPI;

@@ -14,16 +14,30 @@ A Discord bot that tracks League of Legends ranked solo/duo queue gaming session
 - 📈 **Positive feedback** - Only shows LP gains to encourage players
 - 🎭 **Champion artwork** - Visual displays using Riot's Data Dragon API
 - 👥 **Role management** - Users can opt-in/out of session notifications
+- 🎰 **Interactive betting system** - Bet virtual currency on game outcomes with real-time odds
+- 💎 **Virtual economy** - Credit system with daily bonuses and transaction history
+- 📊 **Live game analysis** - Detailed team compositions with champion-specific stats
+- 🏅 **Comprehensive player stats** - Recent winrates, champion performance, and team analysis
 
 ## How It Works
 
 The bot monitors players and provides intelligent notifications:
 
 - **Session Start**: When a player begins their first ranked game (with role ping for subscribers)
+- **Live Betting**: Interactive betting panel with team analysis, champion stats, and 4-minute betting window
 - **Post-Game**: Match results with champion artwork, KDA, CS, LP changes (wins only)
+- **Betting Results**: Automatic payout notifications for winners (2x credits) and bet resolution
 - **Session End**: Comprehensive summary with duration, W/L record, LP delta, and champion stats
 
 Sessions span multiple games with accurate timing based on actual gameplay, not detection delays.
+
+### Betting System
+
+- **Virtual Currency**: Users start with 100💎 and receive 100💎 daily automatically
+- **Betting Options**: 30💎, 50💎, or 100💎 bets on WIN or LOSS outcomes
+- **Live Analysis**: Real-time team compositions with ranked winrates and champion-specific stats
+- **Smart Timing**: 4-minute betting window from game announcement
+- **Fair Payouts**: 2x payout on correct predictions, lose bet amount on wrong predictions
 
 ## Prerequisites
 

@@ -231,28 +231,6 @@ class PlayerTracker {
                 const displayRank = apexTiers.includes(soloRank.tier) ? soloRank.tier : `${soloRank.tier} ${soloRank.rank}`;
                 console.log(`📊 Session starting: ${soloRank.leaguePoints} LP (${displayRank})`);
             }
-            
-            const embed = {
-                color: 0x00ff00,
-                title: '🎮 Gaming Session Started!',
-                description: `**${summoner.gameName}#${summoner.tagLine}** started a ranked solo queue session!`,
-                fields: [
-                    {
-                        name: 'Current Rank',
-                        value: formattedRank,
-                        inline: true
-                    },
-                    {
-                        name: 'Session Start',
-                        value: `<t:${Math.floor(this.playerSession.sessionStartTime.getTime() / 1000)}:t>`,
-                        inline: true
-                    }
-                ],
-                timestamp: new Date(),
-                footer: {
-                    text: 'LoL Paparazzi'
-                }
-            };
 
             // Find the Paparazzi role and ping it (only once per session)
             let content = '';
@@ -265,7 +243,81 @@ class PlayerTracker {
                 }
             }
 
-            await channel.send({ content, embeds: [embed] });
+            // Create and send betting panel if betting manager is available
+            if (this.bettingManager && gameData) {
+                console.log('🎰 Creating betting panel for new game...');
+                
+                try {
+                    // Analyze the current game for detailed betting panel
+                    const gameAnalysis = await this.riotApi.analyzeCurrentGame(summoner, gameData);
+                    const bettingPanel = await this.bettingManager.createEnhancedBettingPanel(gameAnalysis);
+                    
+                    // Send the betting panel
+                    const message = await channel.send(bettingPanel);
+                    
+                    // Track the betting panel for timer updates
+                    this.bettingManager.setBettingPanel(
+                        gameData.gameId, 
+                        message.id, 
+                        channel.id, 
+                        Date.now()
+                    );
+                    
+                    console.log(`✅ Betting panel created for game ${gameData.gameId}`);
+                } catch (error) {
+                    console.error('Error creating betting panel:', error);
+                    
+                    // Send basic session start notification as fallback
+                    const basicEmbed = {
+                        color: 0x00ff00,
+                        title: '🎮 Gaming Session Started!',
+                        description: `**${summoner.gameName}#${summoner.tagLine}** started a ranked solo queue session!`,
+                        fields: [
+                            {
+                                name: 'Current Rank',
+                                value: formattedRank,
+                                inline: true
+                            },
+                            {
+                                name: 'Session Start',
+                                value: `<t:${Math.floor(this.playerSession.sessionStartTime.getTime() / 1000)}:t>`,
+                                inline: true
+                            }
+                        ],
+                        timestamp: new Date(),
+                        footer: {
+                            text: 'LoL Paparazzi'
+                        }
+                    };
+                    
+                    await channel.send({ content, embeds: [basicEmbed] });
+                }
+            } else {
+                // Send basic session start notification if no betting manager
+                const basicEmbed = {
+                    color: 0x00ff00,
+                    title: '🎮 Gaming Session Started!',
+                    description: `**${summoner.gameName}#${summoner.tagLine}** started a ranked solo queue session!`,
+                    fields: [
+                        {
+                            name: 'Current Rank',
+                            value: formattedRank,
+                            inline: true
+                        },
+                        {
+                            name: 'Session Start',
+                            value: `<t:${Math.floor(this.playerSession.sessionStartTime.getTime() / 1000)}:t>`,
+                            inline: true
+                        }
+                    ],
+                    timestamp: new Date(),
+                    footer: {
+                        text: 'LoL Paparazzi'
+                    }
+                };
+                
+                await channel.send({ content, embeds: [basicEmbed] });
+            }
         } catch (error) {
             console.error('Error sending session start notification:', error);
         }
@@ -564,6 +616,21 @@ class PlayerTracker {
             // Update session statistics with match data for timing
             await this.updateSessionStats(playerStats, lpChange, matchData);
             
+            // Resolve bets if betting manager is available
+            if (this.bettingManager && gameId) {
+                console.log('🎰 Resolving bets for completed game...');
+                try {
+                    const actualOutcome = playerStats.win ? 'win' : 'loss';
+                    const betResults = await this.bettingManager.resolveBets(gameId, actualOutcome, mostRecentMatchId);
+                    
+                    if (betResults.length > 0) {
+                        await this.sendBettingResults(betResults, summonerData, playerStats);
+                    }
+                } catch (error) {
+                    console.error('Error resolving bets:', error);
+                }
+            }
+            
             // Send post-game notification with LP data
             await this.sendPostGameNotification(summonerData, playerStats, lpChange);
             return true; // Success
@@ -571,6 +638,60 @@ class PlayerTracker {
         } catch (error) {
             console.error('Error analyzing queued match:', error);
             return false; // Will retry later
+        }
+    }
+
+    async sendBettingResults(betResults, summonerData, playerStats) {
+        try {
+            console.log(`📊 Sending betting results for ${betResults.length} bets`);
+            
+            // Group results by channel for efficient messaging
+            const resultsByChannel = new Map();
+            betResults.forEach(result => {
+                if (!resultsByChannel.has(result.channelId)) {
+                    resultsByChannel.set(result.channelId, []);
+                }
+                resultsByChannel.get(result.channelId).push(result);
+            });
+            
+            // Send results to each channel
+            for (const [channelId, channelResults] of resultsByChannel) {
+                try {
+                    const channel = await this.discordClient.channels.fetch(channelId);
+                    
+                    // Create results summary
+                    const winners = channelResults.filter(r => r.won);
+                    const losers = channelResults.filter(r => !r.won);
+                    
+                    const resultEmoji = playerStats.win ? '🎉' : '💔';
+                    const outcomeText = playerStats.win ? 'VICTORY' : 'DEFEAT';
+                    
+                    let resultText = `${resultEmoji} **BETTING RESULTS - ${outcomeText}**\n`;
+                    resultText += `${summonerData.gameName}#${summonerData.tagLine} (${playerStats.championName})\n\n`;
+                    
+                    if (winners.length > 0) {
+                        resultText += `🏆 **WINNERS:**\n`;
+                        for (const winner of winners) {
+                            resultText += `<@${winner.userId}> won ${winner.payout}💎 (bet ${winner.betAmount}💎 on ${winner.betOutcome.toUpperCase()})\n`;
+                        }
+                        resultText += '\n';
+                    }
+                    
+                    if (losers.length > 0) {
+                        resultText += `😢 **LOST BETS:**\n`;
+                        for (const loser of losers) {
+                            resultText += `<@${loser.userId}> lost ${loser.betAmount}💎 (bet on ${loser.betOutcome.toUpperCase()})\n`;
+                        }
+                    }
+                    
+                    await channel.send(resultText);
+                    console.log(`✅ Sent betting results to channel ${channelId}`);
+                } catch (error) {
+                    console.error(`Error sending betting results to channel ${channelId}:`, error);
+                }
+            }
+        } catch (error) {
+            console.error('Error sending betting results:', error);
         }
     }
 

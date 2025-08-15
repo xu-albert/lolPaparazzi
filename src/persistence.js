@@ -136,6 +136,9 @@ class PersistenceManager {
             `);
             console.log('✅ Match analysis queue table initialized');
             
+            // Create betting system tables
+            await this.initializeBettingTables();
+            
             // Check if any existing data
             const countResult = await this.pool.query('SELECT COUNT(*) FROM player_tracking');
             console.log(`📊 Existing tracking records: ${countResult.rows[0].count}`);
@@ -143,6 +146,67 @@ class PersistenceManager {
         } catch (error) {
             console.error('❌ Error initializing database:', error.message);
             console.error('❌ Full error:', error);
+        }
+    }
+
+    async initializeBettingTables() {
+        try {
+            console.log('🎰 Initializing betting system tables...');
+            
+            // Create user credits table
+            await this.pool.query(`
+                CREATE TABLE IF NOT EXISTS user_credits (
+                    id SERIAL PRIMARY KEY,
+                    user_id VARCHAR(255) NOT NULL UNIQUE,
+                    guild_id VARCHAR(255) NOT NULL,
+                    balance INTEGER DEFAULT 100,
+                    last_daily_claim DATE,
+                    total_winnings INTEGER DEFAULT 0,
+                    total_losses INTEGER DEFAULT 0,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+            console.log('✅ User credits table initialized');
+            
+            // Create active bets table
+            await this.pool.query(`
+                CREATE TABLE IF NOT EXISTS active_bets (
+                    id SERIAL PRIMARY KEY,
+                    user_id VARCHAR(255) NOT NULL,
+                    guild_id VARCHAR(255) NOT NULL,
+                    game_id VARCHAR(255) NOT NULL,
+                    player_puuid VARCHAR(255) NOT NULL,
+                    bet_amount INTEGER NOT NULL,
+                    bet_outcome VARCHAR(10) NOT NULL,
+                    channel_id VARCHAR(255) NOT NULL,
+                    game_start_time TIMESTAMP WITH TIME ZONE NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    resolved_at TIMESTAMP WITH TIME ZONE,
+                    status VARCHAR(20) DEFAULT 'active'
+                )
+            `);
+            console.log('✅ Active bets table initialized');
+            
+            // Create bet history table
+            await this.pool.query(`
+                CREATE TABLE IF NOT EXISTS bet_history (
+                    id SERIAL PRIMARY KEY,
+                    user_id VARCHAR(255) NOT NULL,
+                    guild_id VARCHAR(255) NOT NULL,
+                    bet_amount INTEGER NOT NULL,
+                    bet_outcome VARCHAR(10) NOT NULL,
+                    actual_outcome VARCHAR(10) NOT NULL,
+                    result VARCHAR(20) NOT NULL,
+                    payout_amount INTEGER DEFAULT 0,
+                    match_id VARCHAR(255),
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+            console.log('✅ Bet history table initialized');
+            
+        } catch (error) {
+            console.error('❌ Error initializing betting tables:', error.message);
         }
     }
 
