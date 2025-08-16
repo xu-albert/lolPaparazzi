@@ -835,6 +835,16 @@ class PlayerTracker {
             this.playerSession.currentTier = newTier;
             this.playerSession.currentRank = newRank;
             
+            // Also update all sessions in the map to ensure synchronization
+            for (const [channelId, session] of this.playerSessions) {
+                if (session.puuid === summonerData.puuid) {
+                    session.currentLP = newLP;
+                    session.currentTier = newTier;
+                    session.currentRank = newRank;
+                    console.log(`💾 Updated LP tracking for channel ${channelId}: ${newLP} LP`);
+                }
+            }
+            
             // Display rank properly for apex tiers in logging
             const displayRank = apexTiers.includes(newTier) ? newTier : `${newTier} ${newRank}`;
             console.log(`💰 LP Change: ${lpChange > 0 ? '+' : ''}${lpChange} (${newLP} LP total, ${displayRank})`);
