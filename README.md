@@ -1,16 +1,16 @@
 # LoL Paparazzi 🎮
 
-A Discord bot that tracks League of Legends ranked solo/duo queue gaming sessions with comprehensive match analytics and persistent data storage.
+A Discord bot that tracks League of Legends ranked solo/duo queue daily performance with comprehensive match analytics and persistent data storage.
 
 ## Features
 
-- 🎯 **Session-based tracking** - Smart notifications for session start/end with complete game analytics
+- 📅 **Daily tracking** - Automatic daily summaries at midnight with complete game analytics
 - 🏆 **Ranked Solo/Duo only** - Focuses on competitive ranked games (queue ID 420)
-- ⏰ **Smart timing** - 15-minute timeout with accurate session duration calculation
-- 📊 **Comprehensive analytics** - LP tracking, champion statistics, KDA analysis, and session summaries
+- ⏰ **Daily summaries** - Automatic reports at midnight showing daily performance
+- 📊 **Comprehensive analytics** - LP tracking, champion statistics, KDA analysis, and daily summaries
 - 🎮 **Live game detection** - Real-time status with champion artwork and game timing
 - 💾 **Full persistence** - PostgreSQL database ensures zero data loss across deployments
-- 🔄 **Intelligent polling** - Adaptive intervals (3min idle, 5min during sessions)
+- 🔄 **Intelligent polling** - Consistent 3-minute intervals for game detection
 - 📈 **Positive feedback** - Only shows LP gains to encourage players
 - 🎭 **Champion artwork** - Visual displays using Riot's Data Dragon API
 - 👥 **Role management** - Users can opt-in/out of session notifications
@@ -23,13 +23,13 @@ A Discord bot that tracks League of Legends ranked solo/duo queue gaming session
 
 The bot monitors players and provides intelligent notifications:
 
-- **Session Start**: When a player begins their first ranked game (with role ping for subscribers)
+- **Game Start**: When a player begins a ranked game (with role ping for subscribers)
 - **Live Predictions**: Interactive prediction panel with team analysis, champion stats, and 4-minute prediction window
-- **Post-Game**: Match results with champion artwork, KDA, CS, LP changes (wins only)
+- **Post-Game**: Match results with champion artwork, KDA, CS, LP changes (wins only), and daily game count
 - **Prediction Results**: Automatic accuracy updates and results notifications for all participants
-- **Session End**: Comprehensive summary with duration, W/L record, LP delta, and champion stats
+- **Daily Summary**: Comprehensive report at midnight with games played, W/L record, LP delta, and champion stats
 
-Sessions span multiple games with accurate timing based on actual gameplay, not detection delays.
+Daily tracking reduces spam while providing meaningful performance insights.
 
 ### Prediction System
 

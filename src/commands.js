@@ -27,7 +27,7 @@ function createCommands(riotApi, tracker) {
                     const embed = new EmbedBuilder()
                         .setColor(0x00ff00)
                         .setTitle('✅ Tracking Setup Complete!')
-                        .setDescription(`Now tracking **${displayName}** for ranked solo queue sessions in this channel!`)
+                        .setDescription(`Now tracking **${displayName}** daily performance in this channel!`)
                         .setTimestamp()
                         .setFooter({ text: 'LoL Paparazzi' });
 
@@ -58,15 +58,13 @@ function createCommands(riotApi, tracker) {
                 .setDescription('Stop tracking in this channel'),
             async execute(interaction) {
                 const channelId = interaction.channelId;
-                const session = tracker.getSessionForChannel(channelId);
-                const wasTracking = session !== undefined;
-                const trackedSummoner = wasTracking ? session.summonerName : null;
+                const playerData = tracker.getTrackerForChannel(channelId);
+                const wasTracking = playerData !== undefined;
+                const trackedSummoner = wasTracking ? playerData.summonerName : null;
                 
                 if (wasTracking) {
-                    // Remove only the session for this specific channel
-                    tracker.removeSession(channelId);
-                    // Clear saved data for this channel only
-                    tracker.persistence.clearTrackingData(channelId);
+                    // Remove tracking for this channel
+                    tracker.removeTracking(channelId);
                 }
                 
                 const embed = new EmbedBuilder()
@@ -97,65 +95,80 @@ function createCommands(riotApi, tracker) {
                     .setTimestamp()
                     .setFooter({ text: 'LoL Paparazzi' });
 
-                const session = tracker.getSessionForChannel(interaction.channelId);
-                if (!session) {
+                const playerData = tracker.getTrackerForChannel(interaction.channelId);
+                const dailyStats = tracker.dailyData.get(interaction.channelId);
+                
+                if (!playerData) {
                     embed.setDescription('No player is currently being tracked in this channel.\n\nUse `/setup <summoner>` to start tracking!');
+                } else if (!dailyStats) {
+                    embed.setDescription(`Tracking **${playerData.summonerName}** but no daily data available yet.`);
                 } else {
-                    // Get real-time session metrics with rate limiting
-                    const metrics = await tracker.getRealTimeSessionMetrics(interaction.user.id);
+                    const summoner = dailyStats.summoner;
+                    embed.setDescription(`Tracking **${summoner.gameName}#${summoner.tagLine}**`);
                     
-                    if (metrics.error) {
-                        embed.setDescription(`Tracking **${session.summonerName}**\n\n⚠️ ${metrics.error}`)
-                            .setColor(0xff9900);
-                    } else {
-                        embed.setDescription(`Tracking **${session.summonerName}**`);
+                    // Try to get current game status
+                    try {
+                        const currentGame = await riotApi.getCurrentGame(summoner.puuid);
+                        const isInGame = currentGame && riotApi.isRankedSoloGame(currentGame);
                         
-                        // Add champion thumbnail if player is in game
-                        if (metrics.isInGame && metrics.currentChampion) {
-                            // Use champion square image as thumbnail
-                            const championImageUrl = `https://ddragon.leagueoflegends.com/cdn/14.1.1/img/champion/${metrics.currentChampion.replace(/[^a-zA-Z0-9]/g, '')}.png`;
-                            embed.setThumbnail(championImageUrl);
+                        if (isInGame && currentGame.participants) {
+                            const participant = currentGame.participants.find(p => p.puuid === summoner.puuid);
+                            if (participant && participant.championId) {
+                                const championName = await riotApi.getChampionNameById(participant.championId);
+                                const championImageUrl = `https://ddragon.leagueoflegends.com/cdn/14.1.1/img/champion/${championName.replace(/[^a-zA-Z0-9]/g, '')}.png`;
+                                embed.setThumbnail(championImageUrl);
+                            }
                         }
                         
-                        // Status and games
-                        const fields = [
-                            { 
-                                name: 'Status', 
-                                value: `${metrics.statusEmoji} ${metrics.status}`, 
-                                inline: true 
-                            }
-                        ];
+                        // Build fields
+                        const fields = [];
                         
-                        // Show game counts if in session
-                        if (session.inSession) {
+                        // Status field
+                        if (isInGame) {
                             fields.push({
-                                name: 'Session Games',
-                                value: `${metrics.completedGames} completed${metrics.isInGame ? ' + 1 current' : ''}`,
+                                name: 'Status',
+                                value: '🎮 Currently in ranked game',
+                                inline: true
+                            });
+                        } else {
+                            fields.push({
+                                name: 'Status',
+                                value: '💤 Not in game',
+                                inline: true
+                            });
+                        }
+                        
+                        // Today's games
+                        fields.push({
+                            name: "Today's Games",
+                            value: `${dailyStats.gamesPlayed} ranked${dailyStats.casualGames > 0 ? `, ${dailyStats.casualGames} casual` : ''}`,
+                            inline: true
+                        });
+                        
+                        // Daily stats if available
+                        if (dailyStats.wins > 0 || dailyStats.losses > 0) {
+                            const winrate = Math.round((dailyStats.wins / (dailyStats.wins + dailyStats.losses)) * 100);
+                            fields.push({
+                                name: "Today's Record",
+                                value: `${dailyStats.wins}W-${dailyStats.losses}L (${winrate}% WR)`,
                                 inline: true
                             });
                             
-                            // Session duration
-                            if (metrics.durationText !== 'No session active') {
+                            // LP change today
+                            if (dailyStats.totalLPChange !== 0) {
+                                const lpEmoji = dailyStats.totalLPChange > 0 ? '📈' : '📉';
                                 fields.push({
-                                    name: 'Session Duration',
-                                    value: metrics.durationText,
+                                    name: "Today's LP",
+                                    value: `${lpEmoji} ${dailyStats.totalLPChange > 0 ? '+' : ''}${dailyStats.totalLPChange} LP`,
                                     inline: true
                                 });
                             }
                         }
                         
-                        // Add session stats if available
-                        if (metrics.sessionStats && (metrics.sessionStats.wins > 0 || metrics.sessionStats.losses > 0)) {
-                            const winrate = Math.round((metrics.sessionStats.wins / (metrics.sessionStats.wins + metrics.sessionStats.losses)) * 100);
-                            fields.push({
-                                name: 'Session Record',
-                                value: `${metrics.sessionStats.wins}W-${metrics.sessionStats.losses}L (${winrate}% WR)`,
-                                inline: true
-                            });
-                        }
-                        
-                        
                         embed.addFields(...fields);
+                    } catch (error) {
+                        console.error('Error fetching game status:', error);
+                        embed.addFields({ name: 'Status', value: '⚠️ Error fetching status', inline: true });
                     }
                 }
 

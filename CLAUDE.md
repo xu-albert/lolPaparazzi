@@ -2,9 +2,9 @@
 
 ## Current Status
 - ✅ Core bot functionality complete with PostgreSQL persistence
-- ✅ Session-based tracking (start/end notifications)
+- ✅ **Daily tracking system** (replaced session-based tracking to reduce spam)
 - ✅ Riot ID support with Account API integration  
-- ✅ Smart polling: 3min idle, 5min during sessions
+- ✅ Smart polling: 3min intervals for consistent game detection
 - ✅ Deployed on Railway with auto-redeploys
 - ✅ Fixed summoner ID issue - now uses PUUID for rank lookups
 - ✅ Role ping system with /join and /leave commands
@@ -33,10 +33,10 @@
 - Add admin functionality to edit user accuracy stats (for bugs/exploits)
 - Add prediction results display within prediction panels
 
-### 2. Session Analytics
-- Add win/loss summary after each session ends
-- Track LP gain/loss for each session
-- Display session statistics (games played, duration, performance)
+### 2. Additional Daily Features
+- Add manual daily summary command (/daily)
+- Track weekly trends and statistics
+- Display historical daily performance comparison
 
 ### 3. Detailed Player Information  
 - Show LP, current rank, recent winrate
@@ -52,10 +52,10 @@
 - **Database**: PostgreSQL on Railway with persistent storage
 - **APIs**: Riot Account API, Summoner API, Spectator API v5, Data Dragon for champion images
 - **Game Tracking**: Only ranked solo/duo games (queue ID 420)
-- **Session Logic**: 15 minutes of inactivity timeout, smart polling intervals
+- **Daily Logic**: Automatic daily summary at midnight, resets tracking for new day
 - **Prediction System**: 4-minute prediction windows, deployment-resistant panel tracking
 - **Bot Permissions**: Manage Roles (for Paparazzi role creation/assignment)
-- **Data Persistence**: All prediction panels, user accuracy stats, session data persisted in PostgreSQL
+- **Data Persistence**: All prediction panels, user accuracy stats, daily tracking data persisted in PostgreSQL
 
 ## Database Admin Instructions
 

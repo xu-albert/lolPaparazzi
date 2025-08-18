@@ -122,6 +122,64 @@ class PersistenceManager {
             `);
             console.log('✅ Session stats table initialized');
 
+            // Create daily tracking table
+            await this.pool.query(`
+                CREATE TABLE IF NOT EXISTS daily_tracking (
+                    id SERIAL PRIMARY KEY,
+                    channel_id VARCHAR(255) NOT NULL,
+                    summoner_puuid VARCHAR(255) NOT NULL,
+                    summoner_name VARCHAR(255) NOT NULL,
+                    date DATE NOT NULL,
+                    start_lp INTEGER,
+                    end_lp INTEGER,
+                    start_tier VARCHAR(50),
+                    start_rank VARCHAR(10),
+                    end_tier VARCHAR(50),
+                    end_rank VARCHAR(10),
+                    games_played INTEGER DEFAULT 0,
+                    wins INTEGER DEFAULT 0,
+                    losses INTEGER DEFAULT 0,
+                    casual_games INTEGER DEFAULT 0,
+                    total_lp_change INTEGER DEFAULT 0,
+                    first_game_time TIMESTAMP WITH TIME ZONE,
+                    last_game_time TIMESTAMP WITH TIME ZONE,
+                    champion_stats JSONB,
+                    best_game JSONB,
+                    worst_game JSONB,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(channel_id, summoner_puuid, date)
+                )
+            `);
+            console.log('✅ Daily tracking table initialized');
+
+            // Create daily games table for individual game records
+            await this.pool.query(`
+                CREATE TABLE IF NOT EXISTS daily_games (
+                    id SERIAL PRIMARY KEY,
+                    daily_tracking_id INTEGER,
+                    match_id VARCHAR(255) NOT NULL,
+                    champion VARCHAR(255) NOT NULL,
+                    win BOOLEAN NOT NULL,
+                    kills INTEGER NOT NULL,
+                    deaths INTEGER NOT NULL,
+                    assists INTEGER NOT NULL,
+                    kda_ratio DECIMAL(5,2),
+                    cs INTEGER NOT NULL,
+                    cs_per_min DECIMAL(4,1),
+                    game_duration_seconds INTEGER NOT NULL,
+                    game_duration_text VARCHAR(20),
+                    lp_change INTEGER,
+                    game_start_time TIMESTAMP WITH TIME ZONE NOT NULL,
+                    game_end_time TIMESTAMP WITH TIME ZONE NOT NULL,
+                    queue_id INTEGER,
+                    is_ranked BOOLEAN DEFAULT true,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (daily_tracking_id) REFERENCES daily_tracking(id) ON DELETE CASCADE
+                )
+            `);
+            console.log('✅ Daily games table initialized');
+
             // Create pending match analysis queue table
             await this.pool.query(`
                 CREATE TABLE IF NOT EXISTS pending_match_analysis (
@@ -925,6 +983,172 @@ class PersistenceManager {
             }
         } catch (error) {
             console.error('Error cleaning up betting panels:', error);
+        }
+    }
+
+    // Daily tracking methods
+    async getDailyTracking(channelId, summonerPuuid, date) {
+        if (!this.databaseAvailable) return null;
+        
+        try {
+            const result = await this.pool.query(`
+                SELECT * FROM daily_tracking 
+                WHERE channel_id = $1 AND summoner_puuid = $2 AND date = $3
+            `, [channelId, summonerPuuid, date]);
+            
+            return result.rows[0] || null;
+        } catch (error) {
+            console.error('Error getting daily tracking:', error);
+            return null;
+        }
+    }
+
+    async createOrUpdateDailyTracking(channelId, summonerData, date) {
+        if (!this.databaseAvailable) return null;
+        
+        try {
+            const result = await this.pool.query(`
+                INSERT INTO daily_tracking (
+                    channel_id, summoner_puuid, summoner_name, date,
+                    start_lp, start_tier, start_rank
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (channel_id, summoner_puuid, date) 
+                DO UPDATE SET 
+                    summoner_name = EXCLUDED.summoner_name,
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING id
+            `, [
+                channelId,
+                summonerData.puuid,
+                `${summonerData.gameName}#${summonerData.tagLine}`,
+                date,
+                summonerData.currentLP || 0,
+                summonerData.currentTier,
+                summonerData.currentRank
+            ]);
+            
+            return result.rows[0].id;
+        } catch (error) {
+            console.error('Error creating/updating daily tracking:', error);
+            return null;
+        }
+    }
+
+    async updateDailyStats(dailyTrackingId, stats) {
+        if (!this.databaseAvailable) return;
+        
+        try {
+            await this.pool.query(`
+                UPDATE daily_tracking SET
+                    games_played = $2,
+                    wins = $3,
+                    losses = $4,
+                    casual_games = $5,
+                    total_lp_change = $6,
+                    end_lp = $7,
+                    end_tier = $8,
+                    end_rank = $9,
+                    first_game_time = $10,
+                    last_game_time = $11,
+                    champion_stats = $12,
+                    best_game = $13,
+                    worst_game = $14,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = $1
+            `, [
+                dailyTrackingId,
+                stats.gamesPlayed,
+                stats.wins,
+                stats.losses,
+                stats.casualGames || 0,
+                stats.totalLPChange,
+                stats.endLP,
+                stats.endTier,
+                stats.endRank,
+                stats.firstGameTime,
+                stats.lastGameTime,
+                JSON.stringify(stats.championStats),
+                JSON.stringify(stats.bestGame),
+                JSON.stringify(stats.worstGame)
+            ]);
+            
+            console.log(`📊 Updated daily stats for tracking ID ${dailyTrackingId}`);
+        } catch (error) {
+            console.error('Error updating daily stats:', error);
+        }
+    }
+
+    async saveDailyGame(dailyTrackingId, gameData, matchData) {
+        if (!this.databaseAvailable) return;
+        
+        try {
+            await this.pool.query(`
+                INSERT INTO daily_games (
+                    daily_tracking_id, match_id, champion, win,
+                    kills, deaths, assists, kda_ratio,
+                    cs, cs_per_min, game_duration_seconds, game_duration_text,
+                    lp_change, game_start_time, game_end_time,
+                    queue_id, is_ranked
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+            `, [
+                dailyTrackingId,
+                gameData.matchId,
+                gameData.championName,
+                gameData.win,
+                gameData.kills,
+                gameData.deaths,
+                gameData.assists,
+                gameData.kda === 'Perfect' ? 99 : parseFloat(gameData.kda),
+                gameData.cs,
+                parseFloat(gameData.csPerMin),
+                matchData.info.gameDuration,
+                gameData.gameDuration,
+                gameData.lpChange || 0,
+                new Date(matchData.info.gameStartTimestamp),
+                new Date(matchData.info.gameEndTimestamp),
+                matchData.info.queueId,
+                matchData.info.queueId === 420
+            ]);
+            
+            console.log(`💾 Saved daily game: ${gameData.championName} ${gameData.win ? 'W' : 'L'}`);
+        } catch (error) {
+            console.error('Error saving daily game:', error);
+        }
+    }
+
+    async getDailySummaries(channelId, summonerPuuid, days = 7) {
+        if (!this.databaseAvailable) return [];
+        
+        try {
+            const result = await this.pool.query(`
+                SELECT * FROM daily_tracking 
+                WHERE channel_id = $1 AND summoner_puuid = $2 
+                AND date >= CURRENT_DATE - INTERVAL '${days} days'
+                ORDER BY date DESC
+            `, [channelId, summonerPuuid]);
+            
+            return result.rows;
+        } catch (error) {
+            console.error('Error getting daily summaries:', error);
+            return [];
+        }
+    }
+
+    async cleanupOldDailyData(daysToKeep = 30) {
+        if (!this.databaseAvailable) return;
+        
+        try {
+            const result = await this.pool.query(`
+                DELETE FROM daily_tracking 
+                WHERE date < CURRENT_DATE - INTERVAL '${daysToKeep} days'
+                RETURNING id
+            `);
+            
+            if (result.rows.length > 0) {
+                console.log(`🧹 Cleaned up ${result.rows.length} old daily tracking records`);
+            }
+        } catch (error) {
+            console.error('Error cleaning up old daily data:', error);
         }
     }
 }

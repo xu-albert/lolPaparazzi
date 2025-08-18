@@ -2,7 +2,7 @@ const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const cron = require('node-cron');
 const { config, validateConfig } = require('./config');
 const RiotAPI = require('./riotApi');
-const PlayerTracker = require('./tracker');
+const DailyTracker = require('./dailyTracker');
 const BettingManager = require('./bettingManager');
 const createCommands = require('./commands');
 
@@ -16,7 +16,7 @@ const client = new Client({
 });
 
 const riotApi = new RiotAPI(config.riot.apiKey);
-const tracker = new PlayerTracker(riotApi, client);
+const tracker = new DailyTracker(riotApi, client);
 const bettingManager = new BettingManager(tracker.persistence, riotApi);
 
 // Make betting manager available to tracker
