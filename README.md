@@ -26,7 +26,7 @@ Intended to be deployed on [Railway](https://railway.com) for anyone to use.
 ### Prerequisites
 
 - Node.js 18+
-- PostgreSQL database
+- PostgreSQL database (local or hosted, e.g. [Railway](https://railway.com) or [Neon](https://neon.tech)). Tables are created automatically on first run.
 - Discord bot token — create one at the [Discord Developer Portal](https://discord.com/developers/applications)
 - Riot Games API key — get one from the [Riot Developer Portal](https://developer.riotgames.com/)
 
