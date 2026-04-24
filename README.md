@@ -47,6 +47,10 @@ RIOT_API_KEY=your_riot_api_key
 DATABASE_URL=postgresql://username:password@host:5432/database_name
 ```
 
+### Add the bot to your server
+
+Follow Discord's [official guide](https://discord.com/developers/docs/quick-start/getting-started#installing-your-app) to generate an invite link. The bot needs the `bot` and `applications.commands` scopes, and Send Messages, Use Slash Commands, and Manage Roles permissions.
+
 ### Run
 
 ```bash
@@ -57,5 +61,5 @@ npm start
 
 - `/setup GameName#TAG` — start tracking a player in the current channel
 - `/stop` — stop tracking
-- `/join` / `/leave` — opt in or out of notifications
+- `/join` / `/leave` — opt in or out of notifications. The bot creates a Paparazzi role in the server and pings it when a tracked player starts a game.
 - `/info` — show current tracking status
