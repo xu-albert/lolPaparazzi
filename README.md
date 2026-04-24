@@ -19,7 +19,7 @@ A Discord bot that tracks your friends' League of Legends ranked games and progr
 
 Node.js bot using Discord.js and the Riot Games API. PostgreSQL for persistent storage of tracking data, predictions, and leaderboards. Polls the Riot API on a 3-minute interval to detect games.
 
-Intended to be deployed on Railway for anyone to use.
+Intended to be deployed on [Railway](https://railway.com) for anyone to use.
 
 ## Getting started
 
