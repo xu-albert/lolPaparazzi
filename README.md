@@ -14,7 +14,6 @@ A Discord bot that tracks your friends' League of Legends ranked games and progr
 - Prediction system where members can bet on win/loss with a leaderboard
 - Live game analysis with team compositions and champion winrates
 - Daily summaries at midnight with W/L record, LP changes, and champion stats
-- Session tracking that groups back-to-back games together
 
 ## How it's built
 
